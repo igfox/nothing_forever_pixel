@@ -2,9 +2,11 @@
 
 An AI-powered retro pixel sitcom generator inspired by Seinfeld. Watch AI-generated scenes unfold in a 16-bit style with procedurally generated dialogue, characters, and locations.
 
+Uses Google Gemini API (free tier available!) to generate endless sitcom scenes.
+
 ## Features
 
-- AI-generated sitcom dialogue using Claude API
+- AI-generated sitcom dialogue using Google Gemini API
 - Retro pixel art characters and environments
 - Multiple locations (apartment, coffee shop, street, hallway)
 - Dynamic character animations and movements
@@ -13,10 +15,17 @@ An AI-powered retro pixel sitcom generator inspired by Seinfeld. Watch AI-genera
 
 ## Prerequisites
 
+**For Docker setup:**
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running
+- [Google Gemini API key](https://aistudio.google.com/app/apikey) (free tier available!)
+
+**For Node.js setup:**
 - [Node.js](https://nodejs.org/) (v14 or higher)
-- [Anthropic API key](https://console.anthropic.com/)
+- [Google Gemini API key](https://aistudio.google.com/app/apikey) (free tier available!)
 
 ## Setup
+
+### Option 1: Using Docker (Recommended - No Node.js installation needed!)
 
 1. **Clone the repository**
    ```bash
@@ -24,31 +33,73 @@ An AI-powered retro pixel sitcom generator inspired by Seinfeld. Watch AI-genera
    cd nothing_forever_pixel
    ```
 
-2. **Install dependencies**
+2. **Configure your API key**
+
+   Copy the `.env.example` file to `.env`:
+   ```bash
+   copy .env.example .env
+   ```
+
+   Edit `.env` and add your Google Gemini API key:
+   ```
+   GEMINI_API_KEY=your_actual_api_key_here
+   ```
+
+   Get your FREE API key from [https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
+
+3. **Start with Docker**
+   ```bash
+   docker-compose up
+   ```
+
+4. **Open in browser**
+
+   Navigate to [http://localhost:3000/script.html](http://localhost:3000/script.html)
+
+5. **To stop the server**
+
+   Press `Ctrl+C` in the terminal, then run:
+   ```bash
+   docker-compose down
+   ```
+
+### Option 2: Using Node.js Directly
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/igfox/nothing_forever_pixel.git
+   cd nothing_forever_pixel
+   ```
+
+2. **Install Node.js**
+
+   Download and install from [https://nodejs.org/](https://nodejs.org/)
+
+3. **Install dependencies**
    ```bash
    npm install
    ```
 
-3. **Configure your API key**
+4. **Configure your API key**
 
    Copy the `.env.example` file to `.env`:
    ```bash
-   cp .env.example .env
+   copy .env.example .env
    ```
 
-   Edit `.env` and add your Anthropic API key:
+   Edit `.env` and add your Google Gemini API key:
    ```
-   ANTHROPIC_API_KEY=your_actual_api_key_here
+   GEMINI_API_KEY=your_actual_api_key_here
    ```
 
-   Get your API key from [https://console.anthropic.com/](https://console.anthropic.com/)
+   Get your FREE API key from [https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
 
-4. **Start the server**
+5. **Start the server**
    ```bash
    npm start
    ```
 
-5. **Open in browser**
+6. **Open in browser**
 
    Navigate to [http://localhost:3000/script.html](http://localhost:3000/script.html)
 
@@ -78,7 +129,7 @@ nothing_forever_pixel/
 
 - **Frontend**: HTML5 Canvas, JavaScript, Web Audio API
 - **Backend**: Node.js, Express
-- **AI**: Anthropic Claude API (Sonnet 4)
+- **AI**: Google Gemini API (gemini-2.5-flash-lite - free tier available!)
 
 ## License
 
