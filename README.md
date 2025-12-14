@@ -1,3 +1,5 @@
+![alt text](image.png)
+
 # Nothing Forever - Retro Pixel Edition
 
 An AI-powered retro pixel sitcom generator inspired by Seinfeld. Watch AI-generated scenes unfold in a 16-bit style with procedurally generated dialogue, characters, and locations.
