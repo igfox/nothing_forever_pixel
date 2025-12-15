@@ -1,22 +1,22 @@
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        const portraitCanvas = document.getElementById('portrait-canvas');
-        const portraitCtx = portraitCanvas.getContext('2d');
-        
-        // Canvas settings
-        const SCALE = 3;
-        const TILE_SIZE = 16;
-        const CANVAS_WIDTH = 320;
-        const CANVAS_HEIGHT = 240;
-        const CHAR_SIZE = 16;
-        
-        canvas.width = CANVAS_WIDTH;
-        canvas.height = CANVAS_HEIGHT;
-        canvas.style.width = (CANVAS_WIDTH * SCALE) + 'px';
-        canvas.style.height = (CANVAS_HEIGHT * SCALE) + 'px';
-        
-        ctx.imageSmoothingEnabled = false;
-        portraitCtx.imageSmoothingEnabled = false;
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const portraitCanvas = document.getElementById('portrait-canvas');
+const portraitCtx = portraitCanvas.getContext('2d');
+
+// Canvas settings
+const SCALE = 3;
+const TILE_SIZE = 16;
+const CANVAS_WIDTH = 320;
+const CANVAS_HEIGHT = 240;
+const CHAR_SIZE = 16;
+
+canvas.width = CANVAS_WIDTH;
+canvas.height = CANVAS_HEIGHT;
+canvas.style.width = (CANVAS_WIDTH * SCALE) + 'px';
+canvas.style.height = (CANVAS_HEIGHT * SCALE) + 'px';
+
+ctx.imageSmoothingEnabled = false;
+portraitCtx.imageSmoothingEnabled = false;
 
         // Character data with voice properties
         const characters = {
@@ -1039,3 +1039,10 @@ IMPORTANT:
                 controls.classList.remove('visible');
                 statusEl.classList.remove('visible');
             }, 3000); // Hide after 3 seconds of no mouse movement
+        }
+
+        // Show controls on mouse movement
+        document.addEventListener('mousemove', showControls);
+
+        // Show controls initially so users know they exist
+        showControls();
