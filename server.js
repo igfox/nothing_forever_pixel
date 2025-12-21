@@ -19,7 +19,7 @@ app.post('/api/generate-scene', async (req, res) => {
             });
         }
 
-        const apiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash-lite:generateContent?key=${process.env.GEMINI_API_KEY}`;
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemma-3-27b-it:generateContent?key=${process.env.GEMINI_API_KEY}`;
 
         const response = await fetch(apiUrl, {
             method: 'POST',
@@ -34,7 +34,7 @@ app.post('/api/generate-scene', async (req, res) => {
                 }],
                 generationConfig: {
                     temperature: 0.9,
-                    maxOutputTokens: 1000,
+                    maxOutputTokens: 2000, // Increased for longer scenes (15-20 exchanges)
                 }
             })
         });
@@ -76,6 +76,6 @@ app.post('/api/generate-scene', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`🎬 Nothing Forever server running on http://localhost:${PORT}`);
+    console.log(`🎬 Pixels Forever server running on http://localhost:${PORT}`);
     console.log(`📺 Open http://localhost:${PORT}/script.html in your browser`);
 });

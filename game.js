@@ -181,6 +181,11 @@ let animationFrame = 0;
 let speakingCharacter = null;
 let speakingTimer = 0;
 
+// Scene batching - pre-generate scenes for smoother streaming
+let sceneQueue = [];
+let isPreGenerating = false;
+const MAX_QUEUED_SCENES = 2;
+
 // Audio
 let audioContext = null;
 let backgroundMusic = null;
@@ -188,11 +193,11 @@ let currentVoiceInterval = null;
 let currentMusicTrack = 'apartment';
 let movementInterval = null;
 
-// Character states
+// Character states - positioned higher to avoid dialogue box (y < 130)
 const characterStates = {
-    'Larry': { x: 80, y: 140, targetX: 80, targetY: 140, facing: 'down', action: 'idle' },
-    'Janet': { x: 160, y: 140, targetX: 160, targetY: 140, facing: 'down', action: 'idle' },
-    'Mike': { x: 240, y: 140, targetX: 240, targetY: 140, facing: 'down', action: 'idle' }
+    'Larry': { x: 80, y: 110, targetX: 80, targetY: 110, facing: 'down', action: 'idle' },
+    'Janet': { x: 160, y: 110, targetX: 160, targetY: 110, facing: 'down', action: 'idle' },
+    'Mike': { x: 240, y: 110, targetX: 240, targetY: 110, facing: 'down', action: 'idle' }
 };
 
 // Audio functions
@@ -313,6 +318,75 @@ function stopSpeaking() {
     stopCharacterVoice();
 }
 
+// Sitcom-style applause and laughter
+function playApplauseAndLaughter() {
+    if (!audioContext) return;
+
+    const duration = 3.5; // Total duration in seconds
+    const now = audioContext.currentTime;
+
+    // Create applause using noise
+    const bufferSize = audioContext.sampleRate * duration;
+    const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+
+    // Generate applause noise
+    for (let i = 0; i < bufferSize; i++) {
+        output[i] = (Math.random() * 2 - 1) * 0.3;
+    }
+
+    const applause = audioContext.createBufferSource();
+    applause.buffer = noiseBuffer;
+
+    const applauseFilter = audioContext.createBiquadFilter();
+    applauseFilter.type = 'bandpass';
+    applauseFilter.frequency.value = 1200;
+    applauseFilter.Q.value = 0.5;
+
+    const applauseGain = audioContext.createGain();
+    applauseGain.gain.setValueAtTime(0, now);
+    applauseGain.gain.linearRampToValueAtTime(0.15, now + 0.3);
+    applauseGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+    applause.connect(applauseFilter);
+    applauseFilter.connect(applauseGain);
+    applauseGain.connect(audioContext.destination);
+
+    applause.start(now);
+    applause.stop(now + duration);
+
+    // Add laughter bursts
+    for (let i = 0; i < 8; i++) {
+        const laughStart = now + (i * 0.4) + Math.random() * 0.2;
+        const laughDuration = 0.15 + Math.random() * 0.1;
+
+        const laugh = audioContext.createOscillator();
+        const laughGain = audioContext.createGain();
+        const laughFilter = audioContext.createBiquadFilter();
+
+        laugh.type = 'sawtooth';
+        laugh.frequency.setValueAtTime(200 + Math.random() * 100, laughStart);
+        laugh.frequency.exponentialRampToValueAtTime(150, laughStart + laughDuration);
+
+        laughFilter.type = 'lowpass';
+        laughFilter.frequency.value = 600 + Math.random() * 400;
+        laughFilter.Q.value = 3;
+
+        laughGain.gain.setValueAtTime(0, laughStart);
+        laughGain.gain.linearRampToValueAtTime(0.08, laughStart + 0.01);
+        laughGain.gain.exponentialRampToValueAtTime(0.001, laughStart + laughDuration);
+
+        laugh.connect(laughFilter);
+        laughFilter.connect(laughGain);
+        laughGain.connect(audioContext.destination);
+
+        laugh.start(laughStart);
+        laugh.stop(laughStart + laughDuration);
+    }
+
+    console.log('👏 Playing applause and laughter');
+}
+
 // Draw character portrait
 function drawPortrait(name) {
     const data = characters[name];
@@ -367,12 +441,13 @@ function drawCharacter(name, isSpeaking) {
     
     ctx.save();
     ctx.translate(x, y - bounce);
-    
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-    ctx.beginPath();
-    ctx.ellipse(0, 7, 6, 2, 0, 0, Math.PI * 2);
-    ctx.fill();
-    
+
+    // Shadow removed - was appearing below dialogue box
+    // ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    // ctx.beginPath();
+    // ctx.ellipse(0, 7, 6, 2, 0, 0, Math.PI * 2);
+    // ctx.fill();
+
     let leftLegOffset = 0, rightLegOffset = 0;
     if (state.action === 'walking') {
         leftLegOffset = frame === 1 || frame === 2 ? 1 : 0;
@@ -794,7 +869,8 @@ function performCharacterAction(name, action) {
             break;
         case 'approach':
             state.targetX = 160 + (Math.random() - 0.5) * 40;
-            state.targetY = 160 + (Math.random() - 0.5) * 20;
+            // Keep Y position above dialogue box (max 130)
+            state.targetY = Math.min(130, 110 + (Math.random() - 0.5) * 20);
             break;
     }
 }
@@ -810,69 +886,154 @@ const locationBanner = document.getElementById('location-banner');
 const bannerTitle = document.getElementById('banner-title');
 const bannerDesc = document.getElementById('banner-desc');
 
+// Pre-generate scenes in the background for smoother streaming
+async function preGenerateScene() {
+    if (isPreGenerating || sceneQueue.length >= MAX_QUEUED_SCENES) return;
+
+    isPreGenerating = true;
+    console.log(`📝 Pre-generating scene (queue: ${sceneQueue.length}/${MAX_QUEUED_SCENES})...`);
+
+    try {
+        const sceneType = sceneTypes[Math.floor(Math.random() * sceneTypes.length)];
+        const location = locations[Math.floor(Math.random() * locations.length)];
+
+        const characterList = Object.entries(characters)
+            .map(([name, data]) => `${name} (${data.personality})`)
+            .join(', ');
+
+        const prompt = `You are writing a Seinfeld-style sitcom scene.
+
+Characters: ${characterList}
+Location: ${location.name} - ${location.description}
+Scene type: ${sceneType}
+
+Write a LONGER comedic scene (15-20 exchanges of dialogue) for about 1 minute of runtime. Format EXACTLY as:
+LARRY: dialogue text here
+JANET: dialogue text here
+MIKE: dialogue text here
+
+IMPORTANT:
+- Use ONLY these character names (LARRY, JANET, MIKE) in all caps
+- Do not introduce other characters
+- Make the dialogue substantial - each line should be 2-4 sentences
+- Keep it observational, absurd, and true to character personalities
+- Make it funny and conversational with good back-and-forth
+- Build to a comedic peak or realization
+- Ensure the conversation flows naturally with callbacks and escalation`;
+
+        const response = await fetch('/api/generate-scene', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt })
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            const sceneText = data.content[0].text;
+
+            sceneQueue.push({
+                sceneText,
+                sceneType,
+                location
+            });
+
+            console.log(`✅ Scene pre-generated! Queue: ${sceneQueue.length}/${MAX_QUEUED_SCENES}`);
+
+            // Keep pre-generating if queue isn't full
+            if (sceneQueue.length < MAX_QUEUED_SCENES && isPlaying) {
+                setTimeout(() => preGenerateScene(), 2000);
+            }
+        }
+    } catch (error) {
+        console.error('Error pre-generating scene:', error);
+    } finally {
+        isPreGenerating = false;
+    }
+}
+
 async function generateScene() {
     if (isGenerating) return;
-    
+
     isGenerating = true;
     skipBtn.disabled = true;
-    
-    const location = locations[Math.floor(Math.random() * locations.length)];
-    const sceneType = sceneTypes[Math.floor(Math.random() * sceneTypes.length)];
-    
+
+    // Try to use a pre-generated scene from the queue
+    let sceneData = sceneQueue.shift();
+    let sceneText;
+    let location, sceneType;
+
+    if (sceneData) {
+        console.log(`🎬 Using pre-generated scene (${sceneQueue.length} remaining in queue)`);
+        sceneText = sceneData.sceneText;
+        location = sceneData.location;
+        sceneType = sceneData.sceneType;
+
+        // Start pre-generating next scene immediately
+        setTimeout(() => preGenerateScene(), 100);
+    } else {
+        // No pre-generated scene available, generate on-the-fly
+        console.log('⚠️ No pre-generated scene available, generating on-the-fly...');
+        location = locations[Math.floor(Math.random() * locations.length)];
+        sceneType = sceneTypes[Math.floor(Math.random() * sceneTypes.length)];
+    }
+
     sceneCount++;
     sceneCountEl.textContent = sceneCount.toString().padStart(2, '0');
     locationNameEl.textContent = location.name;
     currentLocation = location;
-    
+
     // Change music for new location
     currentMusicTrack = location.musicKey;
     if (isPlaying && audioContext) {
         stopBackgroundMusic();
         playBackgroundMusic();
     }
-    
+
     bannerTitle.textContent = location.name;
     bannerDesc.textContent = location.description;
     locationBanner.style.opacity = '1';
     setTimeout(() => {
         locationBanner.style.opacity = '0';
     }, 3000);
-    
-    dialogueLinesEl.innerHTML = '<p class="generating">▶ GENERATING SCENE...</p>';
-    
-    const characterList = Object.entries(characters)
-        .map(([name, data]) => `${name} (${data.personality})`)
-        .join(', ');
 
-    const prompt = `You are writing a Seinfeld-style sitcom scene.
+    dialogueLinesEl.innerHTML = sceneData ? '<p class="generating">▶ LOADING SCENE...</p>' : '<p class="generating">▶ GENERATING SCENE...</p>';
+
+    // If we don't have a pre-generated scene, generate now
+    if (!sceneData) {
+        const characterList = Object.entries(characters)
+            .map(([name, data]) => `${name} (${data.personality})`)
+            .join(', ');
+
+        const prompt = `You are writing a Seinfeld-style sitcom scene.
 
 Characters: ${characterList}
 Location: ${location.name} - ${location.description}
 Scene type: ${sceneType}
 
-Write a MEDIUM-LENGTH comedic scene (8-12 exchanges of dialogue). Format EXACTLY as:
+Write a LONGER comedic scene (15-20 exchanges of dialogue) for about 1 minute of runtime. Format EXACTLY as:
 LARRY: dialogue text here
 JANET: dialogue text here
 MIKE: dialogue text here
 
-IMPORTANT: 
+IMPORTANT:
 - Use ONLY these character names (LARRY, JANET, MIKE) in all caps
 - Do not introduce other characters
-- Make the dialogue substantial - each line should be 1-3 sentences
+- Make the dialogue substantial - each line should be 2-4 sentences
 - Keep it observational, absurd, and true to character personalities
 - Make it funny and conversational with good back-and-forth
-- Build to a comedic peak or realization`;
+- Build to a comedic peak or realization
+- Ensure the conversation flows naturally with callbacks and escalation`;
 
-    try {
-        const response = await fetch('/api/generate-scene', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                prompt: prompt
-            })
-        });
+        try {
+            const response = await fetch('/api/generate-scene', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    prompt: prompt
+                })
+            });
 
         if (response.status === 429) {
             const retryAfter = response.headers.get('retry-after') || 60;
@@ -894,18 +1055,25 @@ IMPORTANT:
             throw new Error(`API error: ${response.status}`);
         }
 
-        const data = await response.json();
-        const sceneText = data.content[0].text;
-        
+            const data = await response.json();
+            sceneText = data.content[0].text;
+
+            // Start pre-generating next scene
+            setTimeout(() => preGenerateScene(), 2000);
+
+        } catch (error) {
+            console.error('Error generating scene:', error);
+            dialogueLinesEl.innerHTML = `<p style="color: #ff6b6b; text-align: center;">ERROR: ${error.message}</p>`;
+            isGenerating = false;
+            skipBtn.disabled = false;
+            return;
+        }
+    }
+
+    // Display the dialogue (either pre-generated or freshly generated)
+    if (sceneText) {
         dialogueLinesEl.innerHTML = '';
         await parseAndDisplayDialogue(sceneText);
-        
-    } catch (error) {
-        console.error('Error generating scene:', error);
-        dialogueLinesEl.innerHTML = `<p style="color: #ff6b6b; text-align: center;">ERROR: ${error.message}</p>`;
-        isGenerating = false;
-        skipBtn.disabled = false;
-        return;
     }
 }
 
@@ -939,11 +1107,12 @@ async function parseAndDisplayDialogue(sceneText) {
     
     for (let i = 0; i < dialogue.length; i++) {
         if (!isPlaying) return;
-        
-        const baseDelay = 3500;
+
+        // Slower pacing for better readability
+        const baseDelay = 4500; // Increased from 3500ms
         const wordCount = dialogue[i].text.split(' ').length;
-        const delay = baseDelay + Math.min(wordCount * 100, 2000);
-        
+        const delay = baseDelay + Math.min(wordCount * 150, 3000); // 150ms per word, max 3s extra
+
         await new Promise(resolve => setTimeout(resolve, delay));
         
         const line = dialogue[i];
@@ -971,10 +1140,21 @@ async function parseAndDisplayDialogue(sceneText) {
         lineEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
     
-    stopSpeaking();
-    
+    // Wait for the last line's voice to finish before stopping
     if (isPlaying) {
-        await new Promise(resolve => setTimeout(resolve, 10000));
+        await new Promise(resolve => setTimeout(resolve, 2500)); // Let last line complete
+    }
+
+    stopSpeaking();
+
+    // Play applause and laughter at the end of the scene
+    if (isPlaying && audioContext) {
+        playApplauseAndLaughter();
+        await new Promise(resolve => setTimeout(resolve, 4000)); // Wait for applause to finish
+    }
+
+    if (isPlaying) {
+        await new Promise(resolve => setTimeout(resolve, 6000)); // Wait before next scene
         
         if (isPlaying) {
             isGenerating = false;
@@ -995,11 +1175,13 @@ playBtn.addEventListener('click', () => {
     playBtn.style.display = 'none';
     pauseBtn.style.display = 'flex';
     statusEl.textContent = '▶ LIVE';
-    
+
     initAudio();
     playBackgroundMusic();
-    
+
     if (sceneCount === 0) {
+        // Start pre-generating scenes for smooth streaming
+        setTimeout(() => preGenerateScene(), 3000);
         generateScene();
     }
 });
@@ -1009,10 +1191,20 @@ pauseBtn.addEventListener('click', () => {
     pauseBtn.style.display = 'none';
     playBtn.style.display = 'flex';
     statusEl.textContent = '◼ PAUSED';
-    
+
     stopBackgroundMusic();
     stopCharacterVoice();
 });
+
+// Auto-start for streaming mode
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('autoplay') === 'true') {
+    console.log('🎬 Autoplay mode enabled - starting in 2 seconds...');
+    setTimeout(() => {
+        playBtn.click();
+        console.log('✅ Autoplay started');
+    }, 2000);
+}
 
 skipBtn.addEventListener('click', () => {
     if (!isGenerating) {

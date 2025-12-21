@@ -8,6 +8,9 @@ services:
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - PORT=3000
+      - TWITCH_STREAM_KEY=${TWITCH_STREAM_KEY}
+      - TWITCH_SERVER=${TWITCH_SERVER}
+      - TEST_MODE=${TEST_MODE}
     env_file:
       - .env
     volumes:
