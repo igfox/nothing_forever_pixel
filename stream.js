@@ -1,6 +1,7 @@
 const puppeteer = require('puppeteer');
 const { spawn } = require('child_process');
 const { PassThrough } = require('stream');
+const WebSocket = require('ws');
 require('dotenv').config();
 
 // Configuration
@@ -9,13 +10,18 @@ const CONFIG = {
   twitchStreamKey: process.env.TWITCH_STREAM_KEY,
   twitchServer: process.env.TWITCH_SERVER || 'rtmp://live.twitch.tv/app',
 
+  // WebSocket settings
+  wsPort: 3001,
+
   // Video settings
   canvasWidth: 960,
   canvasHeight: 720,
   outputWidth: 1280,
   outputHeight: 720,
-  fps: 30,
-  videoBitrate: '2500k',
+  fps: 30,  // Target 30fps with canvas.captureStream
+  videoBitrate: '2500k',  // Increased for 30fps 720p
+  maxBitrate: '3000k',
+  bufferSize: '6000k',
 
   // Audio settings
   audioSampleRate: 48000,
@@ -38,6 +44,9 @@ class TwitchStreamer {
     this.page = null;
     this.ffmpegProcess = null;
     this.audioStream = null;
+    this.videoStream = null;
+    this.wss = null;
+    this.wsConnection = null;
     this.isRunning = false;
     this.restartCount = 0;
     this.currentRestartDelay = CONFIG.restartDelay;
@@ -216,27 +225,192 @@ class TwitchStreamer {
     }
   }
 
+  async setupWebSocketServer() {
+    console.log('🔌 Setting up WebSocket server for video streaming...');
+
+    return new Promise((resolve, reject) => {
+      // Create WebSocket server
+      this.wss = new WebSocket.Server({
+        port: CONFIG.wsPort,
+        maxPayload: 10 * 1024 * 1024  // 10MB max payload for video chunks
+      });
+
+      this.wss.on('listening', () => {
+        console.log(`✅ WebSocket server listening on port ${CONFIG.wsPort}`);
+        resolve();
+      });
+
+      this.wss.on('error', (error) => {
+        console.error('🔴 WebSocket server error:', error);
+        reject(error);
+      });
+
+      this.wss.on('connection', (ws) => {
+        console.log('🔌 Browser connected to WebSocket server');
+        this.wsConnection = ws;
+
+        // Create video stream for FFmpeg
+        this.videoStream = new PassThrough();
+
+        let chunkCount = 0;
+        let bytesReceived = 0;
+
+        ws.on('message', (data) => {
+          // Receive WebM chunks from browser
+          if (this.videoStream && Buffer.isBuffer(data)) {
+            chunkCount++;
+            bytesReceived += data.length;
+
+            // Write to FFmpeg stdin
+            this.videoStream.write(data);
+
+            // Log progress occasionally
+            if (chunkCount % 100 === 0) {
+              const mbReceived = (bytesReceived / (1024 * 1024)).toFixed(2);
+              console.log(`📹 Received ${chunkCount} video chunks (${mbReceived} MB)`);
+            }
+          }
+        });
+
+        ws.on('close', () => {
+          console.log('🔌 Browser disconnected from WebSocket');
+          this.wsConnection = null;
+
+          // Attempt to reconnect after a short delay
+          setTimeout(() => {
+            if (this.isRunning && !this.wsConnection) {
+              console.log('🔄 Waiting for browser to reconnect...');
+            }
+          }, 2000);
+        });
+
+        ws.on('error', (error) => {
+          console.error('🔴 WebSocket connection error:', error);
+        });
+      });
+    });
+  }
+
+  async setupVideoCapture() {
+    console.log('📹 Setting up canvas video capture...');
+
+    // Inject canvas.captureStream() code into browser
+    const captureSetup = await this.page.evaluate((wsPort, targetFps) => {
+      return new Promise((resolve) => {
+        // Wait for canvas to be available
+        const checkCanvas = setInterval(() => {
+          const canvas = document.getElementById('canvas');
+
+          if (canvas) {
+            clearInterval(checkCanvas);
+
+            try {
+              console.log('✅ Canvas found, setting up captureStream()');
+
+              // Capture canvas at target FPS
+              const stream = canvas.captureStream(targetFps);
+              console.log(`✅ Canvas stream created at ${targetFps}fps`);
+
+              // Set up MediaRecorder with WebM/VP9 encoding
+              const mimeType = 'video/webm;codecs=vp9';
+
+              if (!MediaRecorder.isTypeSupported(mimeType)) {
+                console.error('❌ VP9 not supported, trying VP8');
+                const fallbackMime = 'video/webm;codecs=vp8';
+                if (!MediaRecorder.isTypeSupported(fallbackMime)) {
+                  console.error('❌ WebM not supported at all');
+                  resolve(false);
+                  return;
+                }
+              }
+
+              const recorder = new MediaRecorder(stream, {
+                mimeType: mimeType,
+                videoBitsPerSecond: 2500000  // 2.5 Mbps
+              });
+
+              console.log('✅ MediaRecorder created with', mimeType);
+
+              // Connect to WebSocket server
+              const ws = new WebSocket(`ws://localhost:${wsPort}`);
+
+              ws.onopen = () => {
+                console.log('✅ WebSocket connected to Node.js server');
+
+                // Handle recorded data chunks
+                recorder.ondataavailable = (event) => {
+                  if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+                    ws.send(event.data);
+                  }
+                };
+
+                recorder.onerror = (event) => {
+                  console.error('❌ MediaRecorder error:', event.error);
+                };
+
+                // Start recording with 100ms chunks for low latency
+                recorder.start(100);
+                console.log('✅ MediaRecorder started (100ms chunks)');
+
+                resolve(true);
+              };
+
+              ws.onerror = (error) => {
+                console.error('❌ WebSocket error:', error);
+                resolve(false);
+              };
+
+              ws.onclose = () => {
+                console.warn('⚠️ WebSocket closed, stopping recorder');
+                if (recorder.state !== 'inactive') {
+                  recorder.stop();
+                }
+              };
+
+            } catch (error) {
+              console.error('❌ Failed to set up video capture:', error);
+              resolve(false);
+            }
+          }
+        }, 100);
+
+        // Timeout after 10 seconds
+        setTimeout(() => {
+          clearInterval(checkCanvas);
+          console.error('❌ Canvas not found after 10s');
+          resolve(false);
+        }, 10000);
+      });
+    }, CONFIG.wsPort, CONFIG.fps);
+
+    if (captureSetup) {
+      console.log('✅ Video capture setup complete - streaming at 30fps');
+      return true;
+    } else {
+      console.error('❌ Failed to set up video capture');
+      return false;
+    }
+  }
+
   async startFFmpeg() {
-    console.log('🎬 Starting FFmpeg...');
+    console.log('🎬 Starting FFmpeg with WebM → H.264 transcoding...');
 
     const rtmpUrl = `${CONFIG.twitchServer}/${CONFIG.twitchStreamKey}`;
 
     // Determine if we have real audio or need silent audio
     const hasRealAudio = this.audioStream !== null;
 
-    // FFmpeg arguments for streaming to Twitch
+    // FFmpeg arguments for WebM → RTMP transcoding
     const ffmpegArgs = [
-      // Input: raw video frames from stdin
-      '-f', 'image2pipe',
-      '-vcodec', 'png',
-      '-r', String(CONFIG.fps),
-      '-i', '-',
+      // Video input: WebM stream from WebSocket
+      '-f', 'webm',
+      '-i', 'pipe:0',  // Video from stdin
     ];
 
     // Add audio input
     if (hasRealAudio) {
       console.log('🎵 Using real Web Audio capture');
-      // Input: raw PCM audio from stdin (pipe:3)
+      // Input: raw PCM audio from pipe:3
       ffmpegArgs.push(
         '-f', 's16le',  // Signed 16-bit little-endian PCM
         '-ar', String(CONFIG.audioSampleRate),
@@ -252,21 +426,27 @@ class TwitchStreamer {
       );
     }
 
-    // Add video encoding settings
+    // Video encoding: Decode WebM/VP9, re-encode to H.264
     ffmpegArgs.push(
+      // Video filters: scale with pixel-perfect upscaling
       '-vf', `scale=${CONFIG.outputWidth}:${CONFIG.outputHeight}:flags=neighbor`,
+
+      // Video codec settings
       '-c:v', 'libx264',
-      '-preset', 'veryfast',
-      '-tune', 'film',  // Changed from zerolatency for better quality/buffering balance
+      '-preset', 'veryfast',  // Good balance for live streaming
+      '-tune', 'zerolatency',  // Minimize latency
       '-b:v', CONFIG.videoBitrate,
-      '-maxrate', '3000k',  // Slightly higher maxrate for headroom
-      '-bufsize', '6000k',  // Increased buffer size to reduce buffering
-      '-g', String(CONFIG.keyframeInterval),
+      '-maxrate', CONFIG.maxBitrate,
+      '-bufsize', CONFIG.bufferSize,
+      '-g', String(CONFIG.keyframeInterval),  // Keyframe every 2 seconds
       '-keyint_min', String(CONFIG.keyframeInterval),
-      '-pix_fmt', 'yuv420p'
+      '-pix_fmt', 'yuv420p',
+      '-r', String(CONFIG.fps),  // Force 30fps output
+      '-profile:v', 'main',  // H.264 main profile for compatibility
+      '-level', '4.1'  // H.264 level for 1080p streaming
     );
 
-    // Add audio encoding settings
+    // Audio encoding settings
     ffmpegArgs.push(
       '-c:a', 'aac',
       '-b:a', CONFIG.audioBitrate,
@@ -274,47 +454,72 @@ class TwitchStreamer {
       '-ac', String(CONFIG.audioChannels)
     );
 
-    // Add A/V sync and output settings
+    // A/V sync and output settings
     ffmpegArgs.push(
-      '-shortest',  // End when shortest stream ends
+      '-af', 'aresample=async=1',  // Audio resampling for sync
       '-async', '1',  // Audio sync method
       '-vsync', 'cfr',  // Constant frame rate
+      '-max_muxing_queue_size', '1024',
+
+      // FLV output for RTMP
       '-f', 'flv',
+      '-flvflags', 'no_duration_filesize',
+
+      // RTMP reconnection settings
       '-reconnect', '1',
       '-reconnect_streamed', '1',
       '-reconnect_delay_max', '10',
+
       rtmpUrl
     );
 
     console.log('📡 FFmpeg command:', 'ffmpeg', ffmpegArgs.join(' '));
 
-    // Set up stdio pipes - if we have real audio, we need pipe:3 for audio
+    // Set up stdio pipes
     const stdioConfig = hasRealAudio
-      ? ['pipe', 'pipe', 'pipe', 'pipe']  // stdin, stdout, stderr, audio
+      ? ['pipe', 'pipe', 'pipe', 'pipe']  // stdin (video), stdout, stderr, pipe:3 (audio)
       : ['pipe', 'pipe', 'pipe'];
 
     this.ffmpegProcess = spawn('ffmpeg', ffmpegArgs, {
       stdio: stdioConfig
     });
 
-    // If we have real audio, pipe it to file descriptor 3
+    // Pipe video stream (WebM chunks) to FFmpeg stdin
+    if (this.videoStream) {
+      this.videoStream.pipe(this.ffmpegProcess.stdin);
+      console.log('📹 Video stream (WebM) connected to FFmpeg stdin');
+    }
+
+    // Pipe audio stream (PCM) to FFmpeg pipe:3
     if (hasRealAudio && this.audioStream) {
       this.audioStream.pipe(this.ffmpegProcess.stdio[3]);
-      console.log('🎵 Audio stream connected to FFmpeg');
+      console.log('🎵 Audio stream (PCM) connected to FFmpeg pipe:3');
     }
 
     // Log FFmpeg output
     this.ffmpegProcess.stderr.on('data', (data) => {
       const message = data.toString();
-      // Only log important messages to avoid spam
+
+      // Log errors
       if (message.includes('error') || message.includes('Error')) {
         console.error('🔴 FFmpeg error:', message);
-      } else if (message.includes('frame=')) {
-        // Frame progress - log occasionally
-        if (Math.random() < 0.01) { // 1% of frames
-          const match = message.match(/frame=\s*(\d+)/);
-          if (match) {
-            console.log(`📹 Streaming... frame ${match[1]}`);
+      }
+      // Log warnings
+      else if (message.includes('warning') || message.includes('Warning')) {
+        console.warn('⚠️ FFmpeg warning:', message);
+      }
+      // Log frame progress occasionally
+      else if (message.includes('frame=')) {
+        if (Math.random() < 0.02) { // 2% of progress updates
+          const frameMatch = message.match(/frame=\s*(\d+)/);
+          const fpsMatch = message.match(/fps=\s*([\d.]+)/);
+          const bitrateMatch = message.match(/bitrate=\s*([\d.]+)kbits\/s/);
+
+          if (frameMatch) {
+            const frame = frameMatch[1];
+            const fps = fpsMatch ? fpsMatch[1] : '?';
+            const bitrate = bitrateMatch ? bitrateMatch[1] : '?';
+            console.log(`📹 Streaming: frame ${frame}, fps ${fps}, bitrate ${bitrate}kbps`);
           }
         }
       }
@@ -332,74 +537,41 @@ class TwitchStreamer {
       }
     });
 
-    console.log('✅ FFmpeg started successfully');
+    console.log('✅ FFmpeg started - WebM decoding → H.264 encoding → RTMP');
   }
 
-  async captureAndStream() {
-    console.log('🎥 Starting capture and stream...');
+  async waitForStreaming() {
+    console.log('🎥 Waiting for WebSocket video stream to start...');
     this.isRunning = true;
 
-    const frameInterval = 1000 / CONFIG.fps; // milliseconds per frame
-    let lastFrameTime = Date.now();
-    let frameCount = 0;
+    // Wait for WebSocket connection
+    const maxWaitTime = 30000; // 30 seconds
+    const startTime = Date.now();
 
-    const captureFrame = async () => {
+    while (!this.wsConnection && (Date.now() - startTime < maxWaitTime)) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    if (!this.wsConnection) {
+      throw new Error('Browser failed to connect to WebSocket server within 30 seconds');
+    }
+
+    console.log('✅ WebSocket connected - video streaming active');
+    console.log(`📊 Canvas.captureStream() @ ${CONFIG.fps}fps → MediaRecorder → WebM → FFmpeg → H.264 → RTMP`);
+
+    // Keep the process running and log status periodically
+    const statusInterval = setInterval(() => {
       if (!this.isRunning) {
+        clearInterval(statusInterval);
         return;
       }
 
-      try {
-        const now = Date.now();
-        const elapsed = now - lastFrameTime;
-
-        // Maintain consistent frame rate
-        if (elapsed >= frameInterval) {
-          // Capture screenshot as PNG buffer
-          const screenshot = await this.page.screenshot({
-            type: 'png',
-            clip: {
-              x: 0,
-              y: 0,
-              width: CONFIG.canvasWidth,
-              height: CONFIG.canvasHeight
-            },
-            omitBackground: false
-          });
-
-          // Write to FFmpeg stdin
-          if (this.ffmpegProcess && !this.ffmpegProcess.killed) {
-            const success = this.ffmpegProcess.stdin.write(screenshot);
-
-            if (!success) {
-              // Backpressure - wait for drain
-              await new Promise(resolve => {
-                this.ffmpegProcess.stdin.once('drain', resolve);
-              });
-            }
-          }
-
-          frameCount++;
-          if (frameCount % 300 === 0) { // Log every 10 seconds
-            console.log(`✅ Captured ${frameCount} frames (${Math.round(frameCount / ((now - this.startTime) / 1000))} fps average)`);
-          }
-
-          lastFrameTime = now;
-        }
-
-        // Schedule next frame
-        setImmediate(captureFrame);
-
-      } catch (error) {
-        console.error('🔴 Error capturing frame:', error);
-        this.handleError(error);
+      if (this.wsConnection) {
+        console.log('✅ Stream active - WebSocket connected, FFmpeg processing');
+      } else {
+        console.warn('⚠️ WebSocket disconnected - waiting for reconnection...');
       }
-    };
-
-    this.startTime = Date.now();
-    console.log('✅ Capture started at', new Date().toISOString());
-
-    // Start capturing
-    captureFrame();
+    }, 60000); // Log status every minute
   }
 
   async handleError(error) {
@@ -433,6 +605,37 @@ class TwitchStreamer {
   async cleanup() {
     console.log('🧹 Cleaning up...');
     this.isRunning = false;
+
+    // Close WebSocket connection
+    if (this.wsConnection) {
+      try {
+        this.wsConnection.close();
+      } catch (error) {
+        console.error('Error closing WebSocket connection:', error);
+      }
+      this.wsConnection = null;
+    }
+
+    // Close WebSocket server
+    if (this.wss) {
+      try {
+        this.wss.close();
+        console.log('✅ WebSocket server closed');
+      } catch (error) {
+        console.error('Error closing WebSocket server:', error);
+      }
+      this.wss = null;
+    }
+
+    // Clean up video stream
+    if (this.videoStream) {
+      try {
+        this.videoStream.end();
+      } catch (error) {
+        console.error('Error closing video stream:', error);
+      }
+      this.videoStream = null;
+    }
 
     // Clean up audio stream
     if (this.audioStream) {
@@ -485,19 +688,35 @@ class TwitchStreamer {
   async start() {
     try {
       console.log('\n' + '='.repeat(60));
-      console.log('🎬 Pixels Forever - Twitch Streamer');
+      console.log('🎬 Pixels Forever - Twitch Streamer (WebSocket Mode)');
       console.log('='.repeat(60) + '\n');
 
+      // Step 1: Initialize browser
       await this.initialize();
-      await this.setupAudioCapture();  // Set up Web Audio capture before FFmpeg
+
+      // Step 2: Set up WebSocket server (must be before FFmpeg)
+      await this.setupWebSocketServer();
+
+      // Step 3: Set up audio capture from Web Audio API
+      await this.setupAudioCapture();
+
+      // Step 4: Start FFmpeg (will wait for WebM chunks from WebSocket)
       await this.startFFmpeg();
-      await this.captureAndStream();
+
+      // Step 5: Inject canvas capture code into browser
+      const videoCaptureSuccess = await this.setupVideoCapture();
+      if (!videoCaptureSuccess) {
+        throw new Error('Failed to set up video capture in browser');
+      }
+
+      // Step 6: Wait for WebSocket connection and monitor
+      await this.waitForStreaming();
 
       // Reset restart counter on successful start
       this.restartCount = 0;
       this.currentRestartDelay = CONFIG.restartDelay;
 
-      console.log('\n✅ Streaming to Twitch!');
+      console.log('\n✅ Streaming to Twitch at 30fps!');
       console.log('📺 Check your stream at https://twitch.tv/your_channel\n');
 
     } catch (error) {
