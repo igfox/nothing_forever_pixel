@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pixels Forever</title>
+    <!-- Pixel-perfect retro font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -27,16 +31,8 @@
             <p id="banner-desc"></p>
         </div>
 
-        <div id="dialogue-box">
-            <div id="portrait-container">
-                <canvas id="portrait-canvas" width="112" height="112"></canvas>
-            </div>
-            <div id="dialogue-content">
-                <div id="dialogue-lines">
-                    <p style="color: #00ff00; text-align: center;">▶ PRESS START TO BEGIN ◀</p>
-                </div>
-            </div>
-        </div>
+        <!-- Hidden element for status messages (not visible, dialogue now on canvas) -->
+        <div id="dialogue-lines" style="display: none;"></div>
 
         <div id="controls">
             <button class="control-btn" id="play-btn">▶</button>

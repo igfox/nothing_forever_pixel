@@ -14,10 +14,10 @@ const CONFIG = {
   wsPort: 3001,
 
   // Video settings
-  canvasWidth: 960,
-  canvasHeight: 720,
-  outputWidth: 1280,
-  outputHeight: 720,
+  canvasWidth: 960,  // 320 * 3
+  canvasHeight: 960,  // 320 * 3 (updated for new layout with dialogue area)
+  outputWidth: 960,   // 1:1 aspect ratio to match new canvas
+  outputHeight: 960,
   fps: 30,  // Target 30fps with canvas.captureStream
   videoBitrate: '2500k',  // Increased for 30fps 720p
   maxBitrate: '3000k',
@@ -72,7 +72,9 @@ class TwitchStreamer {
         '--autoplay-policy=no-user-gesture-required',
         '--enable-audio-service-sandbox=false',
         '--disable-audio-output',  // Disable actual audio output to speakers
-        '--enable-features=WebRTCPipeWireCapturer'
+        '--enable-features=WebRTCPipeWireCapturer',
+        '--force-device-scale-factor=1',  // Prevent DPI scaling for crisp pixels
+        '--disable-lcd-text'  // Disable subpixel text rendering for sharper text
       ],
       defaultViewport: {
         width: CONFIG.canvasWidth,
@@ -135,7 +137,7 @@ class TwitchStreamer {
 
             try {
               const sampleRate = audioContext.sampleRate;
-              const bufferSize = 4096; // Process audio in chunks
+              const bufferSize = 2048; // Reduced from 4096 for lower latency (~43ms instead of ~85ms)
 
               // Create a script processor to capture raw audio samples
               const scriptProcessor = audioContext.createScriptProcessor(bufferSize, 2, 2);
@@ -252,6 +254,12 @@ class TwitchStreamer {
         // Create video stream for FFmpeg
         this.videoStream = new PassThrough();
 
+        // Connect video stream to FFmpeg stdin NOW that it exists
+        if (this.ffmpegProcess && this.ffmpegProcess.stdin) {
+          this.videoStream.pipe(this.ffmpegProcess.stdin);
+          console.log('📹 Video stream (WebM) connected to FFmpeg stdin');
+        }
+
         let chunkCount = 0;
         let bytesReceived = 0;
 
@@ -294,94 +302,135 @@ class TwitchStreamer {
   async setupVideoCapture() {
     console.log('📹 Setting up canvas video capture...');
 
-    // Inject canvas.captureStream() code into browser
-    const captureSetup = await this.page.evaluate((wsPort, targetFps) => {
+    // Wait for the first dialogue to actually appear before capturing
+    console.log('⏱️ Waiting for first dialogue box to appear...');
+    const dialogBoxAppeared = await this.page.evaluate(() => {
       return new Promise((resolve) => {
-        // Wait for canvas to be available
-        const checkCanvas = setInterval(() => {
-          const canvas = document.getElementById('canvas');
+        let checks = 0;
+        const checkInterval = setInterval(() => {
+          checks++;
 
-          if (canvas) {
-            clearInterval(checkCanvas);
+          // Check if dialogue is actually being displayed in the DOM
+          const dialogueEl = document.getElementById('dialogue-lines');
 
-            try {
-              console.log('✅ Canvas found, setting up captureStream()');
+          if (dialogueEl) {
+            // Check if there are actual dialogue lines (not just "LOADING" or "GENERATING" messages)
+            const dialogueLines = dialogueEl.querySelectorAll('.dialogue-line');
+            const hasRealDialogue = dialogueLines && dialogueLines.length > 0;
 
-              // Capture canvas at target FPS
-              const stream = canvas.captureStream(targetFps);
-              console.log(`✅ Canvas stream created at ${targetFps}fps`);
-
-              // Set up MediaRecorder with WebM/VP9 encoding
-              const mimeType = 'video/webm;codecs=vp9';
-
-              if (!MediaRecorder.isTypeSupported(mimeType)) {
-                console.error('❌ VP9 not supported, trying VP8');
-                const fallbackMime = 'video/webm;codecs=vp8';
-                if (!MediaRecorder.isTypeSupported(fallbackMime)) {
-                  console.error('❌ WebM not supported at all');
-                  resolve(false);
-                  return;
-                }
-              }
-
-              const recorder = new MediaRecorder(stream, {
-                mimeType: mimeType,
-                videoBitsPerSecond: 2500000  // 2.5 Mbps
-              });
-
-              console.log('✅ MediaRecorder created with', mimeType);
-
-              // Connect to WebSocket server
-              const ws = new WebSocket(`ws://localhost:${wsPort}`);
-
-              ws.onopen = () => {
-                console.log('✅ WebSocket connected to Node.js server');
-
-                // Handle recorded data chunks
-                recorder.ondataavailable = (event) => {
-                  if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-                    ws.send(event.data);
-                  }
-                };
-
-                recorder.onerror = (event) => {
-                  console.error('❌ MediaRecorder error:', event.error);
-                };
-
-                // Start recording with 100ms chunks for low latency
-                recorder.start(100);
-                console.log('✅ MediaRecorder started (100ms chunks)');
-
-                resolve(true);
-              };
-
-              ws.onerror = (error) => {
-                console.error('❌ WebSocket error:', error);
-                resolve(false);
-              };
-
-              ws.onclose = () => {
-                console.warn('⚠️ WebSocket closed, stopping recorder');
-                if (recorder.state !== 'inactive') {
-                  recorder.stop();
-                }
-              };
-
-            } catch (error) {
-              console.error('❌ Failed to set up video capture:', error);
-              resolve(false);
+            if (hasRealDialogue) {
+              console.log(`✅ First dialogue detected after ${checks * 0.5}s (${dialogueLines.length} lines), ready to capture`);
+              clearInterval(checkInterval);
+              resolve(true);
+              return;
             }
           }
-        }, 100);
 
-        // Timeout after 10 seconds
+          // Log progress every 4 seconds
+          if (checks % 8 === 0) {
+            const lineCount = dialogueEl ? dialogueEl.querySelectorAll('.dialogue-line').length : 0;
+            const innerHTML = dialogueEl ? dialogueEl.innerHTML.substring(0, 50) : 'not found';
+            console.log(`⏱️ Still waiting for dialogue... (${checks * 0.5}s elapsed, lines=${lineCount}, content="${innerHTML}...")`);
+          }
+        }, 500);
+
+        // Timeout after 30 seconds
         setTimeout(() => {
-          clearInterval(checkCanvas);
-          console.error('❌ Canvas not found after 10s');
-          resolve(false);
-        }, 10000);
+          clearInterval(checkInterval);
+          console.warn('⚠️ Timeout waiting for dialogue, starting capture anyway');
+          resolve(true);
+        }, 30000);
       });
-    }, CONFIG.wsPort, CONFIG.fps);
+    });
+
+    if (!dialogBoxAppeared) {
+      console.warn('⚠️ Dialogue may not be ready, but proceeding with capture');
+    }
+
+    // Inject canvas.captureStream() code into browser
+    const captureSetup = await this.page.evaluate((wsPort) => {
+      return new Promise(async (resolve) => {
+        const canvas = document.getElementById('canvas');
+
+        if (!canvas) {
+          console.error('❌ Canvas not found');
+          resolve(false);
+          return;
+        }
+
+        try {
+          console.log('✅ Canvas found, setting up captureStream()');
+
+          // Capture canvas at 60fps (the game's animation rate)
+          // FFmpeg will downsample to 30fps with the -r parameter
+          const stream = canvas.captureStream(60);
+          console.log('✅ Canvas stream created at 60fps');
+
+          // Set up MediaRecorder with WebM/VP9 encoding
+          let mimeType = 'video/webm;codecs=vp9';
+          let fallbackUsed = false;
+
+          if (!MediaRecorder.isTypeSupported(mimeType)) {
+            console.warn('⚠️ VP9 not supported, trying VP8');
+            mimeType = 'video/webm;codecs=vp8';
+            fallbackUsed = true;
+
+            if (!MediaRecorder.isTypeSupported(mimeType)) {
+              console.error('❌ WebM not supported at all');
+              resolve(false);
+              return;
+            }
+          }
+
+          const recorder = new MediaRecorder(stream, {
+            mimeType: mimeType,
+            videoBitsPerSecond: 4000000  // Increased to 4 Mbps for better quality
+          });
+
+          console.log(`✅ MediaRecorder created with ${mimeType} at 4Mbps`);
+
+          // Connect to WebSocket server
+          const ws = new WebSocket(`ws://localhost:${wsPort}`);
+
+          ws.onopen = () => {
+            console.log('✅ WebSocket connected to Node.js server');
+
+            // Handle recorded data chunks
+            recorder.ondataavailable = (event) => {
+              if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+                ws.send(event.data);
+              }
+            };
+
+            recorder.onerror = (event) => {
+              console.error('❌ MediaRecorder error:', event.error);
+            };
+
+            // Start recording with 100ms chunks for low latency
+            recorder.start(100);
+            console.log('✅ MediaRecorder started (100ms chunks)');
+
+            resolve(true);
+          };
+
+          ws.onerror = (error) => {
+            console.error('❌ WebSocket error:', error);
+            resolve(false);
+          };
+
+          ws.onclose = () => {
+            console.warn('⚠️ WebSocket closed, stopping recorder');
+            if (recorder.state !== 'inactive') {
+              recorder.stop();
+            }
+          };
+
+        } catch (error) {
+          console.error('❌ Failed to set up video capture:', error);
+          resolve(false);
+        }
+      });
+    }, CONFIG.wsPort);
 
     if (captureSetup) {
       console.log('✅ Video capture setup complete - streaming at 30fps');
@@ -428,8 +477,9 @@ class TwitchStreamer {
 
     // Video encoding: Decode WebM/VP9, re-encode to H.264
     ffmpegArgs.push(
-      // Video filters: scale with pixel-perfect upscaling
+      // Video filters: scale with pixel-perfect nearest-neighbor (no interpolation)
       '-vf', `scale=${CONFIG.outputWidth}:${CONFIG.outputHeight}:flags=neighbor`,
+      '-sws_flags', 'neighbor+full_chroma_int+accurate_rnd',  // Pixel-perfect scaling flags
 
       // Video codec settings
       '-c:v', 'libx264',
@@ -456,10 +506,13 @@ class TwitchStreamer {
 
     // A/V sync and output settings
     ffmpegArgs.push(
-      '-af', 'aresample=async=1',  // Audio resampling for sync
+      // Audio processing: reduce latency and improve sync
+      '-af', 'aresample=async=1:min_hard_comp=0.100000:first_pts=0',
       '-async', '1',  // Audio sync method
       '-vsync', 'cfr',  // Constant frame rate
       '-max_muxing_queue_size', '1024',
+      '-shortest',  // End when shortest input ends
+      '-fflags', '+genpts',  // Generate presentation timestamps
 
       // FLV output for RTMP
       '-f', 'flv',
@@ -484,11 +537,7 @@ class TwitchStreamer {
       stdio: stdioConfig
     });
 
-    // Pipe video stream (WebM chunks) to FFmpeg stdin
-    if (this.videoStream) {
-      this.videoStream.pipe(this.ffmpegProcess.stdin);
-      console.log('📹 Video stream (WebM) connected to FFmpeg stdin');
-    }
+    // Note: Video stream will be connected when WebSocket connects (in setupWebSocketServer)
 
     // Pipe audio stream (PCM) to FFmpeg pipe:3
     if (hasRealAudio && this.audioStream) {

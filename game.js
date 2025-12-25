@@ -1,13 +1,13 @@
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-const portraitCanvas = document.getElementById('portrait-canvas');
-const portraitCtx = portraitCanvas.getContext('2d');
 
 // Canvas settings
 const SCALE = 3;
 const TILE_SIZE = 16;
 const CANVAS_WIDTH = 320;
-const CANVAS_HEIGHT = 240;
+const CANVAS_HEIGHT = 320; // Increased from 240 to accommodate separate dialogue area
+const GAME_AREA_HEIGHT = 192; // Game area (characters, environment) - aligned to tile grid (160 + 2*16)
+const DIALOGUE_AREA_TOP = 194; // Start of dialogue area (with 2px separator at 192-194)
 const CHAR_SIZE = 16;
 
 canvas.width = CANVAS_WIDTH;
@@ -15,8 +15,33 @@ canvas.height = CANVAS_HEIGHT;
 canvas.style.width = (CANVAS_WIDTH * SCALE) + 'px';
 canvas.style.height = (CANVAS_HEIGHT * SCALE) + 'px';
 
+// Disable all smoothing for crisp pixels and text
 ctx.imageSmoothingEnabled = false;
-portraitCtx.imageSmoothingEnabled = false;
+ctx.webkitImageSmoothingEnabled = false;
+ctx.mozImageSmoothingEnabled = false;
+ctx.msImageSmoothingEnabled = false;
+ctx.oImageSmoothingEnabled = false;
+
+// Crisp text rendering settings
+ctx.textRendering = 'geometricPrecision';
+ctx.fontKerning = 'none';
+
+// Font settings
+const FONT_SIZE = 8;
+let fontReady = false;
+
+// Wait for Press Start 2P font to load
+if (document.fonts) {
+    document.fonts.load(`${FONT_SIZE}px "Press Start 2P"`).then(() => {
+        console.log('✅ Press Start 2P font loaded');
+        fontReady = true;
+    }).catch(err => {
+        console.warn('⚠️ Font loading failed, using fallback:', err);
+        fontReady = true;
+    });
+} else {
+    fontReady = true;
+}
 
 // Character data with voice properties
 const characters = {
@@ -100,67 +125,7 @@ const locations = [
     }
 ];
 
-// Music tracks for each location (15 second loops with more variety)
-const musicTracks = {
-    apartment: [
-        // Main melody
-        {note: 523.25, duration: 0.3}, {note: 587.33, duration: 0.3},
-        {note: 659.25, duration: 0.3}, {note: 698.46, duration: 0.3},
-        {note: 783.99, duration: 0.6}, {note: 698.46, duration: 0.3},
-        {note: 659.25, duration: 0.3}, {note: 587.33, duration: 0.6},
-        // Variation
-        {note: 659.25, duration: 0.3}, {note: 698.46, duration: 0.3},
-        {note: 783.99, duration: 0.3}, {note: 880.00, duration: 0.6},
-        {note: 783.99, duration: 0.3}, {note: 698.46, duration: 0.3},
-        // Return
-        {note: 523.25, duration: 0.3}, {note: 493.88, duration: 0.3},
-        {note: 440.00, duration: 0.6}, {note: 493.88, duration: 0.3},
-        {note: 523.25, duration: 0.3}, {note: 587.33, duration: 0.6},
-        {note: 523.25, duration: 0.9}
-    ],
-    coffee: [
-        // Upbeat progression
-        {note: 392.00, duration: 0.25}, {note: 440.00, duration: 0.25},
-        {note: 493.88, duration: 0.25}, {note: 523.25, duration: 0.5},
-        {note: 587.33, duration: 0.25}, {note: 523.25, duration: 0.25},
-        {note: 493.88, duration: 0.25}, {note: 440.00, duration: 0.25},
-        // Bridge
-        {note: 392.00, duration: 0.5}, {note: 329.63, duration: 0.25},
-        {note: 349.23, duration: 0.25}, {note: 392.00, duration: 0.5},
-        {note: 440.00, duration: 0.25}, {note: 493.88, duration: 0.25},
-        // Climax
-        {note: 523.25, duration: 0.25}, {note: 587.33, duration: 0.25},
-        {note: 659.25, duration: 0.5}, {note: 587.33, duration: 0.25},
-        {note: 523.25, duration: 0.75}
-    ],
-    hallway: [
-        // Ambient melody
-        {note: 261.63, duration: 0.4}, {note: 293.66, duration: 0.4},
-        {note: 329.63, duration: 0.4}, {note: 349.23, duration: 0.4},
-        {note: 392.00, duration: 0.8}, {note: 440.00, duration: 0.4},
-        // Variation
-        {note: 392.00, duration: 0.4}, {note: 349.23, duration: 0.4},
-        {note: 329.63, duration: 0.4}, {note: 293.66, duration: 0.8},
-        // Resolution
-        {note: 329.63, duration: 0.4}, {note: 349.23, duration: 0.4},
-        {note: 392.00, duration: 0.6}, {note: 329.63, duration: 0.4},
-        {note: 261.63, duration: 1.0}
-    ],
-    street: [
-        // Energetic pattern
-        {note: 659.25, duration: 0.25}, {note: 587.33, duration: 0.25},
-        {note: 523.25, duration: 0.25}, {note: 493.88, duration: 0.25},
-        {note: 440.00, duration: 0.5}, {note: 493.88, duration: 0.25},
-        {note: 523.25, duration: 0.25}, {note: 587.33, duration: 0.5},
-        // Build up
-        {note: 659.25, duration: 0.25}, {note: 698.46, duration: 0.25},
-        {note: 783.99, duration: 0.25}, {note: 880.00, duration: 0.5},
-        {note: 783.99, duration: 0.25}, {note: 698.46, duration: 0.25},
-        // Finale
-        {note: 659.25, duration: 0.5}, {note: 587.33, duration: 0.25},
-        {note: 523.25, duration: 0.25}, {note: 493.88, duration: 0.75}
-    ]
-};
+// Music tracks removed - now using MP3 files from the songs folder
 
 const sceneTypes = [
     "Larry complains about a minor inconvenience",
@@ -188,16 +153,41 @@ const MAX_QUEUED_SCENES = 2;
 
 // Audio
 let audioContext = null;
-let backgroundMusic = null;
+let backgroundMusicAudio = null; // HTML5 Audio element for MP3 playback
+let backgroundMusicSource = null; // Web Audio source for streaming capture
+let backgroundMusicGain = null; // Gain node for volume control
 let currentVoiceInterval = null;
 let currentMusicTrack = 'apartment';
 let movementInterval = null;
 
-// Character states - positioned higher to avoid dialogue box (y < 130)
+// Music file mapping for each location
+const musicFiles = {
+    'apartment': 'songs/Living with Larry.mp3',
+    'coffee': 'songs/Monkin around.mp3',
+    'hallway': 'songs/Whistling Down the Hallway.mp3',
+    'street': 'songs/The Big City.mp3'
+};
+
+// Character states - positioned in game area (y < 180 to stay above separator at y=200)
 const characterStates = {
     'Larry': { x: 80, y: 110, targetX: 80, targetY: 110, facing: 'down', action: 'idle' },
     'Janet': { x: 160, y: 110, targetX: 160, targetY: 110, facing: 'down', action: 'idle' },
     'Mike': { x: 240, y: 110, targetX: 240, targetY: 110, facing: 'down', action: 'idle' }
+};
+
+// Dialogue box state for canvas rendering
+const currentDialogueState = {
+    text: '',
+    speakerName: '',
+    speakerColor: '#00ff00',
+    portraitImage: null,
+    visible: false,
+    scrollOffset: 0,
+    scrollSpeed: 0.08, // Increased from 0.05 for smoother scrolling
+    needsScroll: false,
+    scrollDirection: 1, // 1 for down, -1 for up
+    scrollPause: 0, // Frames to pause at top/bottom
+    scrollComplete: false // Track when scrolling is finished
 };
 
 // Audio functions
@@ -209,45 +199,69 @@ function initAudio() {
 }
 
 function playBackgroundMusic() {
-    if (!audioContext) return;
-    
     stopBackgroundMusic();
-    
-    const melody = musicTracks[currentMusicTrack] || musicTracks.apartment;
-    let currentNote = 0;
-    
-    function playNote() {
-        if (!isPlaying || !audioContext) return;
-        
-        const note = melody[currentNote % melody.length];
-        
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-        
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-        
-        oscillator.type = 'square';
-        oscillator.frequency.value = note.note;
-        
-        gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-        gainNode.gain.linearRampToValueAtTime(0.03, audioContext.currentTime + 0.01);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + note.duration);
-        
-        oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + note.duration);
-        
-        currentNote++;
-        backgroundMusic = setTimeout(playNote, note.duration * 1000);
+
+    if (!audioContext) {
+        console.warn('AudioContext not initialized, skipping music');
+        return;
     }
-    
-    playNote();
+
+    // Get the MP3 file path for the current location
+    const musicFile = musicFiles[currentMusicTrack] || musicFiles.apartment;
+
+    // Create new audio element
+    backgroundMusicAudio = new Audio(musicFile);
+    backgroundMusicAudio.loop = true; // Loop the music
+    backgroundMusicAudio.crossOrigin = "anonymous"; // Required for Web Audio API
+
+    // Connect to Web Audio API so it can be captured for streaming
+    try {
+        backgroundMusicSource = audioContext.createMediaElementSource(backgroundMusicAudio);
+        backgroundMusicGain = audioContext.createGain();
+        backgroundMusicGain.gain.value = 0.3; // Set volume (30%)
+
+        // Connect: audio element -> gain -> destination
+        backgroundMusicSource.connect(backgroundMusicGain);
+        backgroundMusicGain.connect(audioContext.destination);
+
+        console.log('🎵 Background music connected to Web Audio API for streaming');
+    } catch (err) {
+        console.error('Error connecting music to Web Audio API:', err);
+        // Fallback to direct playback if Web Audio connection fails
+        backgroundMusicAudio.volume = 0.3;
+    }
+
+    // Play the music
+    backgroundMusicAudio.play().catch(err => {
+        console.error('Error playing background music:', err);
+    });
 }
 
 function stopBackgroundMusic() {
-    if (backgroundMusic) {
-        clearTimeout(backgroundMusic);
-        backgroundMusic = null;
+    // Disconnect Web Audio nodes first
+    if (backgroundMusicSource) {
+        try {
+            backgroundMusicSource.disconnect();
+        } catch (e) {
+            // Already disconnected
+        }
+        backgroundMusicSource = null;
+    }
+
+    if (backgroundMusicGain) {
+        try {
+            backgroundMusicGain.disconnect();
+        } catch (e) {
+            // Already disconnected
+        }
+        backgroundMusicGain = null;
+    }
+
+    // Stop HTML5 audio element
+    if (backgroundMusicAudio) {
+        backgroundMusicAudio.pause();
+        backgroundMusicAudio.currentTime = 0;
+        backgroundMusicAudio = null;
     }
 }
 
@@ -309,13 +323,34 @@ function stopCharacterVoice() {
 function setCharacterSpeaking(name, text) {
     speakingCharacter = name;
     speakingTimer = 60;
+
+    // Start voice immediately
     playCharacterVoice(name, text);
-    drawPortrait(name);
+
+    // Delay dialogue display by 100ms to sync with audio capture latency on stream
+    // (Local playback won't notice, but stream will be in sync)
+    setTimeout(() => {
+        // Update dialogue state for canvas rendering
+        const char = characters[name];
+        currentDialogueState.text = text;
+        currentDialogueState.speakerName = name;
+        currentDialogueState.speakerColor = char.color;
+        currentDialogueState.portraitImage = char.portraitImg;
+        currentDialogueState.visible = true;
+
+        // Reset scroll state for new dialogue
+        currentDialogueState.scrollOffset = 0;
+        currentDialogueState.scrollDirection = 1;
+        currentDialogueState.scrollPause = 150; // Pause at top for 2.5 seconds (150 frames at 60fps)
+        currentDialogueState.needsScroll = false;
+        currentDialogueState.scrollComplete = false;
+    }, 100); // 100ms delay to match audio capture latency
 }
 
 function stopSpeaking() {
     speakingCharacter = null;
     stopCharacterVoice();
+    currentDialogueState.visible = false;
 }
 
 // Sitcom-style applause and laughter
@@ -385,17 +420,6 @@ function playApplauseAndLaughter() {
     }
 
     console.log('👏 Playing applause and laughter');
-}
-
-// Draw character portrait
-function drawPortrait(name) {
-    const data = characters[name];
-    portraitCtx.clearRect(0, 0, 112, 112);
-
-    // Draw the portrait image if loaded
-    if (data.portraitImg && data.portraitImg.complete) {
-        portraitCtx.drawImage(data.portraitImg, 0, 0, 112, 112);
-    }
 }
 
 // Helper functions
@@ -671,12 +695,12 @@ function drawEnvironment() {
     ctx.fillRect(0, 130, CANVAS_WIDTH, 2);
     
     ctx.fillStyle = currentLocation.floorColor;
-    ctx.fillRect(0, 160, CANVAS_WIDTH, CANVAS_HEIGHT - 160);
-    
+    ctx.fillRect(0, 160, CANVAS_WIDTH, GAME_AREA_HEIGHT - 160);
+
     const floorLight = lightenColor(currentLocation.floorColor, 10);
     const floorDark = darkenColor(currentLocation.floorColor, 15);
-    
-    for (let y = 160; y < CANVAS_HEIGHT; y += TILE_SIZE) {
+
+    for (let y = 160; y < GAME_AREA_HEIGHT; y += TILE_SIZE) {
         for (let x = 0; x < CANVAS_WIDTH; x += TILE_SIZE) {
             ctx.fillStyle = floorDark;
             ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
@@ -725,13 +749,14 @@ function drawEnvironment() {
         ctx.fillStyle = '#7BA3D0';
         ctx.fillRect(249, 114, 16, 12);
         
+        // Coffee table (adjusted to fit in game area)
         ctx.fillStyle = '#8B4513';
-        ctx.fillRect(80, 165, 80, 60);
+        ctx.fillRect(80, 165, 80, 30);
         ctx.fillStyle = darkenColor('#8B4513', 20);
-        ctx.fillRect(82, 167, 76, 56);
+        ctx.fillRect(82, 167, 76, 26);
         ctx.fillStyle = lightenColor('#8B4513', 30);
         for (let i = 0; i < 3; i++) {
-            ctx.fillRect(90 + i * 20, 175, 15, 2);
+            ctx.fillRect(90 + i * 20, 172, 15, 2);
         }
         
     } else if (currentLocation.name === "COFFEE SHOP") {
@@ -785,20 +810,227 @@ function drawEnvironment() {
     }
 }
 
+// Text wrapping helper that creates all lines (no cutting off)
+function wrapTextIntoLines(text, maxWidth) {
+    // Use temp context for measurement
+    ctx.save();
+    ctx.font = `${FONT_SIZE}px "Press Start 2P", monospace`;
+
+    const words = text.split(' ');
+    const lines = [];
+    let currentLine = '';
+
+    for (let i = 0; i < words.length; i++) {
+        const testLine = currentLine + words[i] + ' ';
+        const lineWidth = ctx.measureText(testLine).width;
+
+        if (lineWidth > maxWidth && i > 0) {
+            lines.push(currentLine.trim());
+            currentLine = words[i] + ' ';
+        } else {
+            currentLine = testLine;
+        }
+    }
+
+    if (currentLine.trim().length > 0) {
+        lines.push(currentLine.trim());
+    }
+
+    ctx.restore();
+    return lines;
+}
+
+// Scrolling text renderer for dialogue
+function renderScrollingText(context, text, x, y, maxWidth, maxHeight, lineHeight) {
+    // Break text into lines
+    const allLines = wrapTextIntoLines(text, maxWidth);
+    const maxVisibleLines = Math.floor(maxHeight / lineHeight);
+
+    // Check if we need scrolling
+    const totalHeight = allLines.length * lineHeight;
+    const needsScroll = totalHeight > maxHeight;
+
+    // Update scroll state
+    if (needsScroll && !currentDialogueState.needsScroll) {
+        currentDialogueState.needsScroll = true;
+    }
+
+    // Handle scrolling animation
+    if (needsScroll) {
+        // Pause at top/bottom before scrolling
+        if (currentDialogueState.scrollPause > 0) {
+            currentDialogueState.scrollPause--;
+        } else if (!currentDialogueState.scrollComplete) {
+            currentDialogueState.scrollOffset += currentDialogueState.scrollSpeed * currentDialogueState.scrollDirection;
+
+            const maxScroll = (totalHeight - maxHeight) + 7;
+
+            if (currentDialogueState.scrollOffset >= maxScroll) {
+                currentDialogueState.scrollOffset = maxScroll;
+                currentDialogueState.scrollPause = 240; // Pause at bottom for 4 seconds (240 frames at 60fps)
+                currentDialogueState.scrollComplete = true; // Mark scroll as complete
+            }
+        }
+    } else {
+        // If no scrolling needed, mark as complete immediately
+        currentDialogueState.scrollComplete = true;
+    }
+
+    // Render visible lines
+    const startLineIndex = Math.floor(currentDialogueState.scrollOffset / lineHeight);
+    const yOffset = -(currentDialogueState.scrollOffset % lineHeight);
+
+    for (let i = 0; i < maxVisibleLines + 1; i++) {
+        const lineIndex = startLineIndex + i;
+        if (lineIndex >= allLines.length) break;
+
+        const lineY = y + yOffset + (i * lineHeight);
+
+        // Only draw if within visible area
+        if (lineY >= y - lineHeight && lineY <= y + maxHeight) {
+            context.fillText(allLines[lineIndex], Math.round(x), Math.round(lineY));
+        }
+    }
+
+    // Draw scroll indicator if needed
+    if (needsScroll) {
+        const indicatorX = x + maxWidth + 5;
+        const scrollBarHeight = maxHeight - 10;
+        const scrollBarY = y + 5;
+
+        // Background bar
+        context.fillStyle = 'rgba(0, 255, 0, 0.3)';
+        context.fillRect(indicatorX, scrollBarY, 3, scrollBarHeight);
+
+        // Position indicator
+        const maxScroll = totalHeight - maxHeight;
+        const scrollPercent = currentDialogueState.scrollOffset / maxScroll;
+        const indicatorHeight = Math.max(10, (maxHeight / totalHeight) * scrollBarHeight);
+        const indicatorY = scrollBarY + (scrollPercent * (scrollBarHeight - indicatorHeight));
+
+        context.fillStyle = '#00ff00';
+        context.fillRect(indicatorX, indicatorY, 3, indicatorHeight);
+    }
+}
+
+// Draw dialogue box on canvas
+function drawDialogueBox() {
+    if (!currentDialogueState.visible || !currentDialogueState.text) return;
+
+    // Dialogue box dimensions - positioned in dedicated dialogue area
+    const boxWidth = 288;  // 90% of 320px canvas width
+    const boxHeight = 110;  // Room for multiple lines
+    const boxX = (CANVAS_WIDTH - boxWidth) / 2;  // Center horizontally
+    const boxY = DIALOGUE_AREA_TOP + 5;  // 5px below separator in dialogue area
+
+    // Draw dialogue box background (black with green border)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+    ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+    ctx.strokeStyle = '#00ff00';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+
+    // Clip all dialogue box contents to stay within box borders
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(boxX + 1, boxY + 1, boxWidth - 2, boxHeight - 2); // Inset by 1px for border (was 2px)
+    ctx.clip();
+
+    // Draw portrait box (left side)
+    const portraitSize = 75;
+    const portraitX = Math.round(boxX + 5);
+    const portraitY = Math.round(boxY + (boxHeight - portraitSize) / 2);
+
+    // Portrait border
+    ctx.strokeStyle = '#00ff00';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(portraitX, portraitY, portraitSize, portraitSize);
+
+    // Draw portrait image if available
+    if (currentDialogueState.portraitImage) {
+        // Disable image smoothing for crisp pixel art
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(
+            currentDialogueState.portraitImage,
+            portraitX + 2, portraitY + 2, portraitSize - 4, portraitSize - 4
+        );
+    }
+
+    // Draw dialogue text (right side)
+    const textX = Math.round(portraitX + portraitSize + 8);
+    const textY = Math.round(boxY + 18);
+    const textWidth = Math.round(boxWidth - portraitSize - 18 - 10); // Extra space for scroll bar
+
+    // Improve text rendering quality
+    ctx.imageSmoothingEnabled = false;
+    ctx.textBaseline = 'top';
+
+    // Character name - use optimized text rendering
+    ctx.fillStyle = currentDialogueState.speakerColor;
+    ctx.font = `${FONT_SIZE}px "Press Start 2P", monospace`;
+    ctx.textBaseline = 'top';
+    ctx.fillText(currentDialogueState.speakerName + ':', Math.round(textX), Math.round(textY));
+
+    // Set up clipping region for text scrolling
+    ctx.save();
+    const textAreaY = Math.round(textY + 12);  // Reduced from 15 to prevent top cutoff
+    const textAreaHeight = Math.round(boxHeight - 18);  // Increased from 25 to prevent bottom cutoff
+
+    // Create clipping rectangle - all pixel-aligned
+    ctx.beginPath();
+    ctx.rect(Math.round(textX), Math.round(textAreaY), Math.round(textWidth + 10), Math.round(textAreaHeight));
+    ctx.clip();
+
+    // Dialogue text with scrolling support
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `${FONT_SIZE}px "Press Start 2P", monospace`;
+    ctx.textBaseline = 'top';
+
+    renderScrollingText(
+        ctx,
+        currentDialogueState.text,
+        textX,
+        textAreaY,
+        textWidth,
+        textAreaHeight,
+        12  // Line height - adjusted for 8px font (was 11)
+    );
+
+    ctx.restore(); // Restore from text area clipping
+    ctx.restore(); // Restore from dialogue box clipping
+}
+
 function render() {
     animationFrame++;
-    
+
+    // Wait for font to be ready before rendering text
+    if (!fontReady && animationFrame < 180) {
+        requestAnimationFrame(render);
+        return;
+    }
+
+    // Draw game area background (sky blue)
     ctx.fillStyle = '#87CEEB';
-    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    
+    ctx.fillRect(0, 0, CANVAS_WIDTH, GAME_AREA_HEIGHT);
+
+    // Draw dialogue area background (dark)
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(0, GAME_AREA_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT - GAME_AREA_HEIGHT);
+
+    // === GAME AREA VIEWPORT (with clipping) ===
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, CANVAS_WIDTH, GAME_AREA_HEIGHT);
+    ctx.clip();
+
     drawEnvironment();
-    
+
     if (speakingCharacter && speakingTimer > 0) {
         speakingTimer--;
     } else if (speakingTimer === 0) {
         speakingCharacter = null;
     }
-    
+
     // Random idle movement every few seconds
     if (isPlaying && animationFrame % 180 === 0) {
         Object.keys(characters).forEach(name => {
@@ -809,11 +1041,32 @@ function render() {
             }
         });
     }
-    
+
     Object.keys(characters).forEach(name => {
         drawCharacter(name, speakingCharacter === name);
     });
-    
+
+    ctx.restore();
+    // === END GAME AREA VIEWPORT ===
+
+    // Draw separator line between viewports (not clipped)
+    ctx.fillStyle = '#00ff00';
+    ctx.fillRect(0, GAME_AREA_HEIGHT, CANVAS_WIDTH, 2);
+
+    // === DIALOGUE AREA VIEWPORT (with clipping) ===
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, GAME_AREA_HEIGHT, CANVAS_WIDTH, CANVAS_HEIGHT - GAME_AREA_HEIGHT);
+    ctx.clip();
+
+    // Draw dialogue box on canvas (if visible)
+    if (currentDialogueState.visible) {
+        drawDialogueBox();
+    }
+
+    ctx.restore();
+    // === END DIALOGUE AREA VIEWPORT ===
+
     requestAnimationFrame(render);
 }
 
@@ -869,8 +1122,8 @@ function performCharacterAction(name, action) {
             break;
         case 'approach':
             state.targetX = 160 + (Math.random() - 0.5) * 40;
-            // Keep Y position above dialogue box (max 130)
-            state.targetY = Math.min(130, 110 + (Math.random() - 0.5) * 20);
+            // Keep Y position in game area (max 175 to stay above separator)
+            state.targetY = Math.min(175, 150 + (Math.random() - 0.5) * 30);
             break;
     }
 }
@@ -1102,47 +1355,59 @@ async function parseAndDisplayDialogue(sceneText) {
     }
     
     positionCharactersForLocation();
-    
+
     const actions = ['pace', 'approach', 'walk_left', 'walk_right'];
-    
+
     for (let i = 0; i < dialogue.length; i++) {
         if (!isPlaying) return;
 
-        // Slower pacing for better readability
-        const baseDelay = 4500; // Increased from 3500ms
-        const wordCount = dialogue[i].text.split(' ').length;
-        const delay = baseDelay + Math.min(wordCount * 150, 3000); // 150ms per word, max 3s extra
-
-        await new Promise(resolve => setTimeout(resolve, delay));
-        
         const line = dialogue[i];
-        const lineEl = document.createElement('div');
-        lineEl.className = 'dialogue-line';
-        lineEl.innerHTML = `
-            <span class="character" style="color: ${line.color};">${line.character}:</span>
-            <span class="text">${line.text}</span>
-        `;
-        dialogueLinesEl.appendChild(lineEl);
-        
+
+        // Update canvas dialogue state (replaces DOM manipulation)
         setCharacterSpeaking(line.character, line.text);
-        
+
+        // Random character actions
         if (Math.random() > 0.7 && i > 0) {
             const randomAction = actions[Math.floor(Math.random() * actions.length)];
             performCharacterAction(line.character, randomAction);
         }
-        
+
         if (Math.random() > 0.8) {
             const otherChars = Object.keys(characters).filter(n => n !== line.character);
             const reactor = otherChars[Math.floor(Math.random() * otherChars.length)];
             performCharacterAction(reactor, 'approach');
         }
-        
-        lineEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    }
-    
-    // Wait for the last line's voice to finish before stopping
-    if (isPlaying) {
-        await new Promise(resolve => setTimeout(resolve, 2500)); // Let last line complete
+
+        // === TIMING SYSTEM ===
+        // Timing: 2s initial + scroll time + 4s final
+
+        // Check if scrolling will be needed (check early before animation starts)
+        const willNeedScrolling = currentDialogueState.needsScroll;
+        const isLastLine = (i === dialogue.length - 1);
+
+        if (isPlaying) {
+            if (willNeedScrolling) {
+                // For scrolling text:
+                // - Scroll animation handles 2s initial pause (120 frames)
+                // - Scroll animation handles the scrolling
+                // - Scroll animation handles 4s bottom pause (240 frames)
+                while (isPlaying && !currentDialogueState.scrollComplete) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                // Add small transition buffer (except for last line)
+                if (!isLastLine) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+            } else {
+                // For non-scrolling text:
+                // Add the full 2.5s + 4s pauses manually (scroll animation doesn't run)
+                await new Promise(resolve => setTimeout(resolve, 2500)); // Initial reading pause (2.5s)
+                while (isPlaying && !currentDialogueState.scrollComplete) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                await new Promise(resolve => setTimeout(resolve, 4000)); // Final reading pause (4s)
+            }
+        }
     }
 
     stopSpeaking();
