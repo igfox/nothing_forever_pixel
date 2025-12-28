@@ -12,6 +12,7 @@
 </head>
 <body>
     <div id="game-container">
+        <!-- Canvas for Phaser 3 and streaming -->
         <canvas id="canvas"></canvas>
     </div>
     <div id="ui-overlay">
@@ -35,14 +36,40 @@
         <div id="dialogue-lines" style="display: none;"></div>
 
         <div id="controls">
-            <button class="control-btn" id="play-btn">▶</button>
-            <button class="control-btn" id="pause-btn" style="display: none;">❚❚</button>
-            <button class="control-btn" id="skip-btn">⏩</button>
+            <button class="control-btn" id="playBtn">▶</button>
+            <button class="control-btn" id="pauseBtn" style="display: none;">❚❚</button>
+            <button class="control-btn" id="skipBtn">⏩</button>
         </div>
 
         <div id="status">◼ PAUSED</div>
     </div>
 
-    <script src="game.js"></script>
+    <!-- Load Phaser 3 from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+
+    <!-- Load configuration from server -->
+    <script src="/config.js"></script>
+
+    <!-- Load Phaser configuration and constants -->
+    <script src="phaser-config.js"></script>
+
+    <!-- Load scenes -->
+    <script src="scenes/BootScene.js"></script>
+    <script src="scenes/GameScene.js"></script>
+
+    <!-- Load entities (Phase 3) -->
+    <script src="entities/Character.js"></script>
+
+    <!-- Load managers (Phases 3-7) -->
+    <script src="managers/AudioManager.js"></script>
+    <script src="managers/CharacterManager.js"></script>
+    <script src="managers/SceneManager.js"></script>
+    <!-- <script src="managers/LocationManager.js"></script> -->
+
+    <!-- Load UI components (Phase 6) -->
+    <script src="ui/DialogueBox.js"></script>
+
+    <!-- Initialize Phaser (must be last) -->
+    <script src="main.js"></script>
 </body>
 </html>

@@ -6,7 +6,10 @@
   "scripts": {
     "start": "node server.js",
     "stream": "pm2 start ecosystem.config.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "generate-sprites": "node scripts/generate-character-sprites.js",
+    "generate-backgrounds": "node scripts/generate-backgrounds.js",
+    "generate-assets": "npm run generate-sprites && npm run generate-backgrounds"
   },
   "keywords": [
     "ai",
@@ -24,6 +27,8 @@
     "puppeteer": "^21.6.0",
     "fluent-ffmpeg": "^2.1.2",
     "pm2": "^5.3.0",
-    "ws": "^8.16.0"
+    "ws": "^8.16.0",
+    "@google/generative-ai": "^0.1.0",
+    "canvas": "^2.11.2"
   }
 }

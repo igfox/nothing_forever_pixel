@@ -9,6 +9,14 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('.'));
 
+// Serve configuration as JavaScript
+app.get('/config.js', (req, res) => {
+    res.setHeader('Content-Type', 'application/javascript');
+    res.send(`window.CONFIG = {
+    testScenes: ${process.env.TEST_SCENES === 'true'}
+};`);
+});
+
 app.post('/api/generate-scene', async (req, res) => {
     try {
         const { prompt } = req.body;
@@ -76,6 +84,6 @@ app.post('/api/generate-scene', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`🎬 Pixels Forever server running on http://localhost:${PORT}`);
-    console.log(`📺 Open http://localhost:${PORT}/script.html in your browser`);
+    console.log(`[STREAM] Pixels Forever server running on http://localhost:${PORT}`);
+    console.log(`[VIDEO] Open http://localhost:${PORT}/script.html in your browser`);
 });

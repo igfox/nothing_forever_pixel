@@ -48,9 +48,9 @@ if (!isTestMode) {
     wait_ready: true,
     listen_timeout: 30000
   });
-  console.log('🎬 Streaming mode enabled - will stream to Twitch');
+  console.log('[STREAM] Streaming mode enabled - will stream to Twitch');
 } else {
-  console.log('🧪 Test mode enabled - streaming disabled');
+  console.log('[TEST] Test mode enabled - streaming disabled');
   console.log('   Access the app at http://localhost:3000/script.html');
 }
 

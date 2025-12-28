@@ -5,6 +5,7 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Install Chromium, FFmpeg, PulseAudio, and dependencies for Puppeteer
+# Also install build dependencies for node-canvas
 RUN apk add --no-cache \
     chromium \
     nss \
@@ -16,7 +17,14 @@ RUN apk add --no-cache \
     bash \
     pulseaudio \
     pulseaudio-utils \
-    alsa-plugins-pulse
+    alsa-plugins-pulse \
+    build-base \
+    cairo-dev \
+    jpeg-dev \
+    pango-dev \
+    giflib-dev \
+    pixman-dev \
+    python3
 
 # Set Puppeteer to use system Chromium
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
