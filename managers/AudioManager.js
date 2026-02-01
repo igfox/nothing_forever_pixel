@@ -227,7 +227,8 @@ class AudioManager {
             charIndex++;
         }, voiceSpeed); // Character-specific speed (140-200ms)
 
-        console.log(`[VOICE] ${characterData.name} speaking (pitch: ${voicePitch}, speed: ${voiceSpeed}ms)`);
+        // Voice logging disabled to reduce spam
+        // console.log(`[VOICE] ${characterData.name} speaking (pitch: ${voicePitch}, speed: ${voiceSpeed}ms)`);
     }
 
     /**

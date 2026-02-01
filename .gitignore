@@ -17,3 +17,7 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# SSH keys
+*.key
+*.pem

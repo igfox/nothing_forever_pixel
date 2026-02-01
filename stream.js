@@ -196,15 +196,9 @@ class TwitchStreamer {
         let chunkCount = 0;
         let bytesReceived = 0;
 
-        // Phase 0 Diagnostic: Track WebM input bitrate
+        // Diagnostic logging disabled to reduce log spam
         let diagnosticBytesReceived = 0;
         let diagnosticChunkCount = 0;
-        const bitrateInterval = setInterval(() => {
-          const kbps = (diagnosticBytesReceived * 8 / 1000).toFixed(2);
-          console.log(`[STATS] WebM input: ${kbps} kbps (${diagnosticChunkCount} chunks/sec)`);
-          diagnosticBytesReceived = 0;
-          diagnosticChunkCount = 0;
-        }, 1000);
 
         ws.on('message', (data) => {
           // Receive WebM chunks from browser
@@ -220,21 +214,17 @@ class TwitchStreamer {
             this.videoStream.write(data);
 
             // Log progress occasionally
-            if (chunkCount % 100 === 0) {
-              const mbReceived = (bytesReceived / (1024 * 1024)).toFixed(2);
-              console.log(`[VIDEO] Received ${chunkCount} video chunks (${mbReceived} MB)`);
-            }
+            // Periodic logging disabled to reduce spam
+            // if (chunkCount % 100 === 0) {
+            //   const mbReceived = (bytesReceived / (1024 * 1024)).toFixed(2);
+            //   console.log(`[VIDEO] Received ${chunkCount} video chunks (${mbReceived} MB)`);
+            // }
           }
         });
 
         ws.on('close', () => {
           console.log('[WEBSOCKET] Browser disconnected from WebSocket');
           this.wsConnection = null;
-
-          // Phase 0 Diagnostic: Clean up bitrate interval
-          if (bitrateInterval) {
-            clearInterval(bitrateInterval);
-          }
 
           // Attempt to reconnect after a short delay
           setTimeout(() => {
@@ -397,10 +387,7 @@ class TwitchStreamer {
               lastCanvasHash = hash;
 
               // Log every 2 seconds (60 frames at 30fps)
-              if (totalFrameChecks % 60 === 0) {
-                const unchangedPct = ((unchangedFrames / totalFrameChecks) * 100).toFixed(2);
-                console.log(`[CANVAS] Canvas change: ${unchangedPct}% frames visually identical (${unchangedFrames}/${totalFrameChecks})`);
-              }
+              // Periodic logging disabled to reduce spam
             } catch (e) {
               // Silently ignore - may not be able to read canvas
             }
@@ -462,10 +449,7 @@ class TwitchStreamer {
                 ws.send(combinedBlob);
 
                 const now = performance.now();
-                const flushInterval = now - lastFlushTime;
-
-                console.log(`[BUFFER] Buffered flush: ${chunkBuffer.length} chunks → ${(combinedBlob.size / 1024).toFixed(2)}KB (${flushInterval.toFixed(2)}ms interval)`);
-
+                // Removed spam logging - was logging 10x per second
                 chunkBuffer = [];
                 lastFlushTime = now;
               }
@@ -490,17 +474,7 @@ class TwitchStreamer {
                   minInterval = Math.min(minInterval, interval);
                   maxInterval = Math.max(maxInterval, interval);
 
-                  // Log every 300 chunks (for high-frequency chunks)
-                  if (chunkCount % 300 === 0) {
-                    const avgInterval = (totalChunkInterval / (chunkCount - 1)).toFixed(2);
-                    const jitter = (maxInterval - minInterval).toFixed(2);
-                    console.log(`[STREAM] Raw MediaRecorder: avg=${avgInterval}ms interval, jitter=${jitter}ms (buffering to ${FLUSH_INTERVAL}ms)`);
-
-                    // Reset stats for next window
-                    totalChunkInterval = 0;
-                    minInterval = Infinity;
-                    maxInterval = 0;
-                  }
+                  // Periodic logging disabled to reduce spam
                 }
 
                 lastChunkTime = now;
@@ -768,19 +742,7 @@ class TwitchStreamer {
 
     // Note: Video stream will be connected when WebSocket connects (in setupWebSocketServer)
 
-    // Phase 0 Diagnostic: Monitor FFmpeg stdin throughput
-    let stdinBytes = 0;
-    if (this.videoStream) {
-      this.videoStream.on('data', (chunk) => {
-        stdinBytes += chunk.length;
-      });
-
-      setInterval(() => {
-        const kbps = (stdinBytes * 8 / 1000).toFixed(2);
-        console.log(`[INPUT] FFmpeg stdin: ${kbps} kbps`);
-        stdinBytes = 0;
-      }, 1000);
-    }
+    // FFmpeg stdin monitoring disabled to reduce log spam
 
     // Note: Audio is now included in the unified WebM stream (no separate pipe:3 needed)
 
@@ -801,29 +763,7 @@ class TwitchStreamer {
       else if (message.includes('warning') || message.includes('Warning')) {
         console.warn('[STREAM WARN] FFmpeg warning:', message);
       }
-      // Log frame progress occasionally with duplicate/drop statistics
-      else if (message.includes('frame=')) {
-        if (Math.random() < 0.02) { // 2% of progress updates
-          const frameMatch = message.match(/frame=\s*(\d+)/);
-          const fpsMatch = message.match(/fps=\s*([\d.]+)/);
-          const bitrateMatch = message.match(/bitrate=\s*([\d.]+)kbits\/s/);
-          const dupMatch = message.match(/dup=\s*(\d+)/);
-          const dropMatch = message.match(/drop=\s*(\d+)/);
-
-          if (frameMatch) {
-            const frame = frameMatch[1];
-            const fps = fpsMatch ? fpsMatch[1] : '?';
-            const bitrate = bitrateMatch ? bitrateMatch[1] : '?';
-            const dup = dupMatch ? dupMatch[1] : '0';
-            const drop = dropMatch ? dropMatch[1] : '0';
-
-            // Calculate duplicate percentage
-            const dupPct = frame > 0 ? ((parseInt(dup) / parseInt(frame)) * 100).toFixed(2) : '0';
-
-            console.log(`[VIDEO] FFmpeg: frame ${frame}, fps ${fps}, bitrate ${bitrate}kbps, dup=${dup} (${dupPct}%), drop=${drop}`);
-          }
-        }
-      }
+      // FFmpeg frame logging disabled to reduce spam
     });
 
     this.ffmpegProcess.on('error', (error) => {

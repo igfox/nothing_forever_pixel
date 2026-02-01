@@ -18,9 +18,9 @@ class GameScene extends Phaser.Scene {
         // Frame counter for idle movements
         this.frameCount = 0;
 
-        // Phase 0 Diagnostic: FPS monitoring
-        this.diagnosticFrameCount = 0;
-        this.diagnosticLastTime = 0;
+        // FPS monitoring (disabled to reduce log spam)
+        // this.diagnosticFrameCount = 0;
+        // this.diagnosticLastTime = 0;
     }
 
     create() {
@@ -254,19 +254,6 @@ class GameScene extends Phaser.Scene {
     update(time, delta) {
         // Frame counter for idle movements (every 180 frames = 6 seconds at 30fps)
         this.frameCount++;
-
-        // Phase 0 Diagnostic: FPS monitoring (every 2 seconds)
-        this.diagnosticFrameCount++;
-        if (this.diagnosticLastTime === 0) {
-            this.diagnosticLastTime = performance.now();
-        }
-        const elapsed = performance.now() - this.diagnosticLastTime;
-        if (elapsed >= 2000) { // Every 2 seconds
-            const actualFPS = (this.diagnosticFrameCount / (elapsed / 1000)).toFixed(2);
-            console.log(`[GAME] Actual Phaser FPS: ${actualFPS}`);
-            this.diagnosticFrameCount = 0;
-            this.diagnosticLastTime = performance.now();
-        }
 
         // Update character manager
         if (this.characterManager) {

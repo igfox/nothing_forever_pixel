@@ -11,6 +11,7 @@ services:
       - TWITCH_STREAM_KEY=${TWITCH_STREAM_KEY}
       - TWITCH_SERVER=${TWITCH_SERVER}
       - TEST_MODE=${TEST_MODE}
+      - TEST_SCENES=${TEST_SCENES}
     env_file:
       - .env
     volumes:

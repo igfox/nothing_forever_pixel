@@ -17,6 +17,11 @@ class SceneManager {
         this.sceneCount = 0;
         this.currentLocation = null;
 
+        // Error handling and fallback
+        this.consecutiveAPIErrors = 0;
+        this.maxConsecutiveErrors = 3;
+        this.retryDelay = 10000; // Start with 10 seconds
+
         // Test mode: Use pre-written 3-line scenes instead of AI generation
         // Controlled by TEST_SCENES environment variable in .env
         this.testMode = window.CONFIG?.testScenes ?? true; // Defaults to true if config not loaded
@@ -99,6 +104,73 @@ MIKE: But I ordered a MEDIUM. Now I'm drinking a large coffee when I wanted a me
     }
 
     /**
+     * Handle API errors with exponential backoff and fallback
+     */
+    handleAPIError(errorType, errorMessage, retryCallback) {
+        this.consecutiveAPIErrors++;
+        console.error(`[API ERROR] ${errorType}: ${errorMessage}`);
+        console.error(`[API ERROR] Consecutive errors: ${this.consecutiveAPIErrors}/${this.maxConsecutiveErrors}`);
+
+        // After multiple failures, temporarily use test scenes as fallback
+        if (this.consecutiveAPIErrors >= this.maxConsecutiveErrors) {
+            console.warn('[FALLBACK] Too many API errors, temporarily using test scenes');
+            console.warn('[FALLBACK] Will retry AI generation in 5 minutes');
+
+            // Use test scene as emergency fallback
+            const testScene = this.testScenes[this.sceneCount % this.testScenes.length];
+            const location = testScene.location;
+
+            this.sceneCount++;
+            this.currentLocation = location;
+
+            // Update UI
+            const sceneCountEl = document.getElementById('scene-count');
+            const locationNameEl = document.getElementById('location-name');
+            if (sceneCountEl) sceneCountEl.textContent = this.sceneCount.toString().padStart(2, '0');
+            if (locationNameEl) locationNameEl.textContent = location.name;
+
+            // Change music and background
+            if (this.audioManager) {
+                this.audioManager.playBackgroundMusic(location.musicKey);
+            }
+            this.changeBackground(location);
+
+            // Play the fallback scene
+            this.parseAndDisplayDialogue(testScene.sceneText).then(() => {
+                // Reset error counter and retry AI after delay
+                setTimeout(() => {
+                    console.log('[FALLBACK] Attempting to restore AI generation...');
+                    this.consecutiveAPIErrors = 0;
+                    this.retryDelay = 10000; // Reset retry delay
+                }, 300000); // 5 minutes
+            });
+
+            return true; // Handled with fallback
+        }
+
+        // Exponential backoff: double the delay each time, up to 2 minutes
+        const delay = Math.min(this.retryDelay * Math.pow(2, this.consecutiveAPIErrors - 1), 120000);
+        console.log(`[RETRY] Retrying in ${delay / 1000} seconds...`);
+
+        setTimeout(() => {
+            retryCallback();
+        }, delay);
+
+        return false; // Will retry
+    }
+
+    /**
+     * Reset error counter on successful API call
+     */
+    resetAPIErrors() {
+        if (this.consecutiveAPIErrors > 0) {
+            console.log('[API] Successful response, resetting error counter');
+            this.consecutiveAPIErrors = 0;
+            this.retryDelay = 10000;
+        }
+    }
+
+    /**
      * Start scene generation and playback
      */
     start() {
@@ -178,6 +250,9 @@ IMPORTANT:
                 const data = await response.json();
                 const sceneText = data.content[0].text;
 
+                // Success! Reset error counter
+                this.resetAPIErrors();
+
                 this.sceneQueue.push({
                     sceneText,
                     sceneType,
@@ -190,9 +265,28 @@ IMPORTANT:
                 if (this.sceneQueue.length < this.maxQueuedScenes && this.isPlaying) {
                     setTimeout(() => this.preGenerateScene(), 2000);
                 }
+            } else {
+                const errorText = await response.text();
+                this.handleAPIError(
+                    `Pre-generation failed (${response.status})`,
+                    errorText,
+                    () => {
+                        if (this.isPlaying && this.sceneQueue.length < this.maxQueuedScenes) {
+                            this.preGenerateScene();
+                        }
+                    }
+                );
             }
         } catch (error) {
-            console.error('Error pre-generating scene:', error);
+            this.handleAPIError(
+                'Pre-generation exception',
+                error.message || error,
+                () => {
+                    if (this.isPlaying && this.sceneQueue.length < this.maxQueuedScenes) {
+                        this.preGenerateScene();
+                    }
+                }
+            );
         } finally {
             this.isPreGenerating = false;
         }
@@ -270,14 +364,39 @@ IMPORTANT:
                     if (response.ok) {
                         const data = await response.json();
                         sceneText = data.content[0].text;
+                        // Success! Reset error counter
+                        this.resetAPIErrors();
                     } else {
-                        console.error('Failed to generate scene on-the-fly');
+                        const errorText = await response.text();
                         this.isGenerating = false;
+
+                        // Use error handler with fallback
+                        const usedFallback = this.handleAPIError(
+                            `On-the-fly generation failed (${response.status})`,
+                            errorText,
+                            () => this.generateScene()
+                        );
+
+                        // If fallback was used, don't continue with generation
+                        if (usedFallback) return;
+
+                        // Otherwise retry is scheduled
                         return;
                     }
                 } catch (error) {
-                    console.error('Error generating scene:', error);
                     this.isGenerating = false;
+
+                    // Use error handler with fallback
+                    const usedFallback = this.handleAPIError(
+                        'On-the-fly generation exception',
+                        error.message || error,
+                        () => this.generateScene()
+                    );
+
+                    // If fallback was used, don't continue with generation
+                    if (usedFallback) return;
+
+                    // Otherwise retry is scheduled
                     return;
                 }
             }
