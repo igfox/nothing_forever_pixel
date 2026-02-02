@@ -2,8 +2,13 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 
+const TopicManager = require('./managers/TopicManager');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Initialize TopicManager
+const topicManager = new TopicManager();
 
 app.use(cors());
 app.use(express.json());
@@ -15,6 +20,23 @@ app.get('/config.js', (req, res) => {
     res.send(`window.CONFIG = {
     testScenes: ${process.env.TEST_SCENES === 'true'}
 };`);
+});
+
+// Topic endpoint - serves topics to the frontend
+app.get('/api/topic', (req, res) => {
+    try {
+        const topic = topicManager.getTopic();
+        console.log(`[SCENE TOPIC] [${topic.source}/${topic.category}] ${topic.topic}`);
+        res.json(topic);
+    } catch (error) {
+        console.error('[TOPICS] Error getting topic:', error.message);
+        res.status(500).json({ error: 'Failed to get topic', topic: 'The group debates a ridiculous topic', category: 'fallback', source: 'static' });
+    }
+});
+
+// Topic stats endpoint
+app.get('/api/topic/stats', (req, res) => {
+    res.json(topicManager.getStats());
 });
 
 app.post('/api/generate-scene', async (req, res) => {

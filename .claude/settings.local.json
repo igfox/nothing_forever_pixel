@@ -9,7 +9,11 @@
       "Bash(cat:*)",
       "Bash(grep:*)",
       "Bash(ls:*)",
-      "Bash(docker-compose logs:*)"
+      "Bash(docker-compose logs:*)",
+      "WebSearch",
+      "Bash(if not exist \"C:\\\\Users\\\\ianfo\\\\code\\\\nothing_forever_pixel\\\\data\" mkdir \"C:\\\\Users\\\\ianfo\\\\code\\\\nothing_forever_pixel\\\\data\")",
+      "Bash(docker run:*)",
+      "Bash(python -c:*)"
     ]
   }
 }

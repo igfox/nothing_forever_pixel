@@ -21,3 +21,6 @@ Thumbs.db
 # SSH keys
 *.key
 *.pem
+
+# manual
+thoughts.md

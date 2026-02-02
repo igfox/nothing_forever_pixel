@@ -26,8 +26,8 @@ class SceneManager {
         // Controlled by TEST_SCENES environment variable in .env
         this.testMode = window.CONFIG?.testScenes ?? true; // Defaults to true if config not loaded
 
-        // Scene types and locations (ported from game.js)
-        this.sceneTypes = [
+        // Legacy scene types (used as fallback if topic fetch fails)
+        this.fallbackSceneTypes = [
             "Larry complains about a minor inconvenience",
             "The group debates a ridiculous topic",
             "Someone has a scheme that will obviously backfire",
@@ -35,6 +35,19 @@ class SceneManager {
             "Two characters have an argument while one watches",
             "Someone discovers something absurd",
             "A character tries to explain something complicated"
+        ];
+
+        // Narrative structures - HOW the scene plays out (separate from WHAT they talk about)
+        this.narrativeStructures = [
+            "The group debates from opposing sides, each becoming more entrenched",
+            "One character has a strong opinion and the others try to talk them out of it",
+            "Two characters agree on something absurd while the third is the voice of reason",
+            "Someone tells a story that keeps getting interrupted with tangents",
+            "A casual observation escalates into a full philosophical crisis",
+            "One character has inside knowledge the others refuse to believe",
+            "The conversation starts normal but takes increasingly bizarre turns",
+            "Someone tries to prove a point through an elaborate analogy that falls apart",
+            "Each character shares a personal anecdote that's more ridiculous than the last"
         ];
 
         this.locations = [
@@ -213,8 +226,28 @@ MIKE: But I ordered a MEDIUM. Now I'm drinking a large coffee when I wanted a me
         console.log(`[TEXT] Pre-generating scene (queue: ${this.sceneQueue.length}/${this.maxQueuedScenes})...`);
 
         try {
-            const sceneType = this.sceneTypes[Math.floor(Math.random() * this.sceneTypes.length)];
             const location = this.locations[Math.floor(Math.random() * this.locations.length)];
+            const narrativeStructure = this.narrativeStructures[Math.floor(Math.random() * this.narrativeStructures.length)];
+
+            // Fetch topic from server
+            let topicText;
+            let sceneType;
+            try {
+                const topicResponse = await fetch('/api/topic');
+                if (topicResponse.ok) {
+                    const topicData = await topicResponse.json();
+                    topicText = topicData.topic;
+                    sceneType = `[${topicData.source}/${topicData.category}] ${topicText}`;
+                    console.log(`[TOPICS] Got topic: ${sceneType}`);
+                } else {
+                    throw new Error('Topic fetch failed');
+                }
+            } catch (topicError) {
+                // Fallback to legacy scene types
+                topicText = this.fallbackSceneTypes[Math.floor(Math.random() * this.fallbackSceneTypes.length)];
+                sceneType = `[fallback] ${topicText}`;
+                console.warn(`[TOPICS] Using fallback topic: ${topicText}`);
+            }
 
             const characterList = Object.entries(this.characterManager.characterData)
                 .map(([name, data]) => `${name} (${data.personality})`)
@@ -224,7 +257,8 @@ MIKE: But I ordered a MEDIUM. Now I'm drinking a large coffee when I wanted a me
 
 Characters: ${characterList}
 Location: ${location.name} - ${location.description}
-Scene type: ${sceneType}
+Topic: ${topicText}
+Scene dynamic: ${narrativeStructure}
 
 Write a LONGER comedic scene (15-20 exchanges of dialogue) for about 1 minute of runtime. Format EXACTLY as:
 LARRY: dialogue text here
@@ -234,8 +268,10 @@ MIKE: dialogue text here
 IMPORTANT:
 - Use ONLY these character names (LARRY, JANET, MIKE) in all caps
 - Do not introduce other characters
+- The conversation should be about the given topic, approached through the scene dynamic
 - Make the dialogue substantial - each line should be 2-4 sentences
 - Keep it observational, absurd, and true to character personalities
+- MIKE should pitch a ridiculous business idea or scheme inspired by the topic
 - Make it funny and conversational with good back-and-forth
 - Build to a comedic peak or realization
 - Ensure the conversation flows naturally with callbacks and escalation`;
@@ -327,7 +363,23 @@ IMPORTANT:
                 // No pre-generated scene available, generate on-the-fly
                 console.log('[SCENE WARN] No pre-generated scene available, generating on-the-fly...');
                 location = this.locations[Math.floor(Math.random() * this.locations.length)];
-                sceneType = this.sceneTypes[Math.floor(Math.random() * this.sceneTypes.length)];
+                const narrativeStructure = this.narrativeStructures[Math.floor(Math.random() * this.narrativeStructures.length)];
+
+                // Fetch topic from server
+                let topicText;
+                try {
+                    const topicResponse = await fetch('/api/topic');
+                    if (topicResponse.ok) {
+                        const topicData = await topicResponse.json();
+                        topicText = topicData.topic;
+                        sceneType = `[${topicData.source}/${topicData.category}] ${topicText}`;
+                    } else {
+                        throw new Error('Topic fetch failed');
+                    }
+                } catch (topicError) {
+                    topicText = this.fallbackSceneTypes[Math.floor(Math.random() * this.fallbackSceneTypes.length)];
+                    sceneType = `[fallback] ${topicText}`;
+                }
 
                 // Generate scene synchronously (blocks until complete)
                 try {
@@ -339,7 +391,8 @@ IMPORTANT:
 
 Characters: ${characterList}
 Location: ${location.name} - ${location.description}
-Scene type: ${sceneType}
+Topic: ${topicText}
+Scene dynamic: ${narrativeStructure}
 
 Write a LONGER comedic scene (15-20 exchanges of dialogue) for about 1 minute of runtime. Format EXACTLY as:
 LARRY: dialogue text here
@@ -349,8 +402,10 @@ MIKE: dialogue text here
 IMPORTANT:
 - Use ONLY these character names (LARRY, JANET, MIKE) in all caps
 - Do not introduce other characters
+- The conversation should be about the given topic, approached through the scene dynamic
 - Make the dialogue substantial - each line should be 2-4 sentences
 - Keep it observational, absurd, and true to character personalities
+- MIKE should pitch a ridiculous business idea or scheme inspired by the topic
 - Make it funny and conversational with good back-and-forth
 - Build to a comedic peak or realization
 - Ensure the conversation flows naturally with callbacks and escalation`;
