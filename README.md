@@ -1,7 +1,6 @@
-![alt text](image-1.png)
+https://clips.twitch.tv/embed?clip=HilariousDoubtfulLionPraiseIt-tX2ETzpDr1sC-uG-
 
 # Nothing Forever - Retro Pixel Edition
-
 An AI-powered retro pixel sitcom generator inspired by Seinfeld. Watch AI-generated scenes unfold in a 16-bit style with procedurally generated dialogue, characters, and locations.
 
 Uses Google Gemini API (free tier available!) to generate endless sitcom scenes.
